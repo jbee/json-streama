@@ -11,6 +11,8 @@ public class Test {
 		String name();
 
 		Stream<Element> elements();
+
+		Stream<Other> items();
 	}
 
 	public interface Element {
@@ -22,13 +24,22 @@ public class Test {
 		Stream<Element> children();
 	}
 
+	public interface Other {
+		boolean flag();
+
+		String name();
+	}
+
 	public static void main(String[] args) {
-		Root json = JsonStream.of(Root.class, new StringBufferInputStream("{'hello':42,'name':'test','elements':[{'id':'1','age':13},{'id':'2','age':45, 'children':[{'id':'x','age':66}]]}".replace('\'', '"')));
+		Root json = JsonStream.of(Root.class, new StringBufferInputStream("{'hello':42,'name':'test','elements':[{'id':'1','age':13},{'id':'2','age':45, 'children':[{'id':'x','age':66}]],'items':[{'name':'itemA','flag':true}]}".replace('\'', '"')));
 		System.out.println(json.hello());
 		System.out.println(json.name());
 		json.elements().forEachOrdered(e -> {
 			System.out.println(e.id() +"/"+ e.age());
 			e.children().forEachOrdered(c -> System.out.println(c.id() +"/"+ c.age()));
+		});
+		json.items().forEachOrdered(item -> {
+			System.out.println(item.flag() +"/"+ item.name());
 		});
 	}
 }

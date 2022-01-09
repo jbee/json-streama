@@ -1,33 +1,26 @@
 package se.jbee.json.stream;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
-import java.io.UncheckedIOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-import java.util.function.IntPredicate;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import static java.lang.Character.toChars;
-import static java.lang.Integer.parseInt;
 import static java.util.Collections.emptyIterator;
 import static java.util.Spliterators.spliteratorUnknownSize;
+import static se.jbee.json.stream.JsonReader.formatException;
 
 public final class JsonStream implements InvocationHandler {
 
@@ -81,7 +74,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private static final String OBJECT_KEY = "__KEY__";
 
-	private final InputStream in;
+	private final JsonReader in;
 	private final JsonMapping mapping;
 	private final Map<Method, JsonMapper<?>> mappers = new HashMap<>();
 	/**
@@ -90,7 +83,7 @@ public final class JsonStream implements InvocationHandler {
 	private final Deque<JsonFrame> stack = new LinkedList<>();
 
 	private JsonStream( InputStream in, JsonMapping mapping) {
-		this.in = in;
+		this.in = new JsonReader(in);
 		this.mapping = mapping;
 	}
 
@@ -111,7 +104,7 @@ public final class JsonStream implements InvocationHandler {
 			}
 			frame.markAsProcessed(name);
 			frame.currentContinuation = null; // allow going to next continuation
-			int cp = readCharSkipWhitespace();
+			int cp = in.readCharSkipWhitespace();
 			return switch (cp) {
 				case '[' -> arrayAsContinuation(member);
 				case '{' -> objectAsContinuation(member);
@@ -137,20 +130,19 @@ public final class JsonStream implements InvocationHandler {
 		Iterator<?> iter = new Iterator<Object>() {
 			@Override
 			public boolean hasNext() {
-				int cp = readCharSkipWhitespace();
+				int cp = in.readCharSkipWhitespace();
 				if (cp == '}') {
 					frame.n = -(frame.n + 1);
 					popFrame(member);
 					return false;
 				}
-				if (frame.n == 0) {
-					if (cp != '"')
-						throw formatException("double quotes of member name", cp);
-				} else {
+				if (frame.n > 0) {
 					if (cp != ',')
 						throw formatException("comma or end of object", cp);
-					readCharSkipWhitespaceAndExpect('"');
+					cp = in.readCharSkipWhitespace();
 				}
+				if (cp != '"')
+						throw formatException("double quotes of member name", cp);
 				// at the end we always have read the opening double quote of the member name already
 				return true;
 			}
@@ -160,8 +152,8 @@ public final class JsonStream implements InvocationHandler {
 				if (frame.n < 0)
 					throw new NoSuchElementException(""+(-frame.n+1));
 				frame.n++;
-				String key = readQuotedString(); // includes closing "
-				readCharSkipWhitespaceAndExpect(':');
+				String key = in.readQuotedString(); // includes closing "
+				in.readCharSkipWhitespaceAndExpect(':');
 				frame.reset();
 				frame.setMemberValue(OBJECT_KEY, key);
 				return newProxy(member.streamType(), JsonStream.this );
@@ -175,7 +167,7 @@ public final class JsonStream implements InvocationHandler {
 		Iterator<?> iter = new Iterator<Object>() {
 			@Override
 			public boolean hasNext() {
-				int cp = readCharSkipWhitespace(); // reads either { (item) or ] (end of continuation)
+				int cp = in.readCharSkipWhitespace(); // reads either { (item) or ] (end of continuation)
 				if (cp == ']') {
 					frame.n = -(frame.n + 1);
 					popFrame(member);
@@ -184,7 +176,7 @@ public final class JsonStream implements InvocationHandler {
 				if (frame.n > 0) {
 					if (cp != ',')
 						throw formatException("comma or end of array", cp);
-					cp = readCharSkipWhitespace();
+					cp = in.readCharSkipWhitespace();
 				}
 				if (cp != '{')
 					throw formatException("start of object or end of array", cp);
@@ -236,181 +228,37 @@ public final class JsonStream implements InvocationHandler {
 	private void readMembersToContinuation(JsonFrame frame) {
 		if (frame.isClosed || frame.currentContinuation != null)
 			return;
+		int cp = ',';
 		if (!frame.isOpened) {
-			readCharSkipWhitespaceAndExpect('{');
+			in.readCharSkipWhitespaceAndExpect('{');
 			frame.isOpened = true;
+		} else if (frame.isContinued) {
+			cp = in.readCharSkipWhitespace();
+			frame.isContinued = false;
 		}
-		int cp = readCharSkipWhitespace();
 		Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
 		while (cp != '}') {
-			if (cp != '"')
-				throw formatException("member name or end of object", cp);
-			String name = readQuotedString();
-			readCharSkipWhitespaceAndExpect(':');
+			if (cp != ',')
+				throw formatException("comma or end of object", cp);
+			in.readCharSkipWhitespaceAndExpect('"');
+			String name = in.readQuotedString();
+			in.readCharSkipWhitespaceAndExpect(':');
 			Member member = frameMembers.get(name);
 			if (member == null) {
 				//TODO skip value
 			} else if (member.isContinuation()) {
 				frame.currentContinuation = name;
+				frame.isContinued = true;
 				return;
 			}
-			cp = readAutodetect(val -> frame.setMemberValue(name, val));
+			frame.currentContinuation = null;
+			cp = in.readAutodetect(val -> frame.setMemberValue(name, val));
 			if (cp != ',' && cp != '}') throw formatException("comma or end of object", cp);
-			if (cp == ',')
-				cp = readCharSkipWhitespace();
 		}
-		frame.currentContinuation = null;
 		frame.isClosed = true;
 	}
 
-	private int readAutodetect(Consumer<Serializable> setter) {
-		int cp = readCharSkipWhitespace();
-		switch (cp) {
-			case '{': setter.accept(readMap()); break;
-			case '[': setter.accept(readArray()); break;
-			case 't': readSkip(3); setter.accept(true); break;
-			case 'f': readSkip(4); setter.accept(false); break;
-			case 'n': readSkip(3); setter.accept(null); break;
-			case '"': setter.accept(readQuotedString()); break;
-			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-': return readNumber(cp, setter);
-			default: throw formatException("start of JSON token", cp);
-		}
-		return readCharSkipWhitespace();
-	}
 
-	private static boolean isDigit(int cp) {
-		return cp >= '0' && cp <= '9';
-	}
-
-	private int readNumber(int cp0, Consumer<Serializable> setter) {
-		StringBuilder n = new StringBuilder();
-		n.append((char) cp0);
-		try {
-			n.append((char) expect(JsonStream::isDigit, "digit", in.read()));
-			int cp = in.read();
-			cp = readDigits(n, cp);
-			if (cp == '.')
-				cp = readDigits(n, cp);
-			if (cp =='e' || cp == 'E') {
-				n.append('e');
-				cp = in.read();
-				if (cp == '+' || cp == '-') {
-					n.append((char) cp);
-					cp = in.read();
-				}
-				cp = readDigits(n, cp);
-			}
-			double number = Double.parseDouble(n.toString());
-			if (number % 1 == 0d) {
-				long asLong = (long)number;
-				if ( asLong < Integer.MAX_VALUE && asLong > Integer.MIN_VALUE ) {
-					setter.accept((int)asLong);
-				} else
-					setter.accept(asLong);
-			} else
-				setter.accept(number);
-		return cp;
-	} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
-	}
-
-	private int readDigits(StringBuilder n, int cp0) throws IOException {
-		int cp = cp0;
-		while (isDigit(cp)) {
-			n.append((char) cp);
-			cp = in.read();
-		}
-		return cp;
-	}
-
-	private ArrayList<Serializable> readArray() {
-		//TODO
-		return new ArrayList<>();
-	}
-
-	private LinkedHashMap<String, Serializable> readMap() {
-		//TODO
-		return new LinkedHashMap<>();
-	}
-
-	private String readQuotedString() {
-		StringBuilder str = new StringBuilder();
-		try {
-			int cp = in.read();
-			while (cp != -1) {
-				if (cp == '"') {
-					// found the end (if escaped we would have hopped over)
-					return str.toString();
-				}
-				if (cp == '\\') {
-					cp = in.read();
-					switch (cp) {
-						case 'u' -> // unicode uXXXX
-								str.append(toChars(parseInt(new String(new int[]{in.read(), in.read(), in.read(), in.read()}, 0, 4), 16)));
-						case '\\' -> str.append('\\');
-						case '/' -> str.append('/');
-						case 'b' -> str.append('\b');
-						case 'f' -> str.append('\f');
-						case 'n' -> str.append('\n');
-						case 'r' -> str.append('\r');
-						case 't' -> str.append('\t');
-						case '"' -> str.append('"');
-						default -> throw formatException("escaped character or unicode sequence", cp);
-					}
-				} else {
-					str.appendCodePoint(cp);
-				}
-				cp = in.read();
-			}
-			throw formatException("end of string", -1);
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
-	}
-
-	private void readSkip(int n) {
-		try {
-			for (int i = 0; i < n; i++)
-				if (in.read() == -1)
-					throw formatException("at least "+(n-i)+" more character(s)", -1);
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
-	}
-
-	private void readCharSkipWhitespaceAndExpect(char expected) {
-		int cp = readCharSkipWhitespace();
-		expect(expected, cp);
-	}
-
-	private int readCharSkipWhitespace() {
-		try {
-		int c = in.read();
-		while (c != -1 && Character.isWhitespace(c)) c = in.read();
-		if (c == -1)
-			throw formatException("at least 1 more character", -1);
-		return c;
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
-	}
-
-	private int expect(IntPredicate test, String description, int cp) {
-		if (!test.test(cp))
-			throw formatException(description, cp);
-		return cp;
-	}
-
-	private int expect(char expected, int cp) {
-		if (cp != expected)
-			throw formatException("`"+expected+"`", cp);
-		return cp;
-	}
-
-	private static JsonFormatException formatException(String expected, int found) {
-		return new JsonFormatException("Expected "+expected+" but found: "+(found == -1 ? "end of input" : "`"+Character.toString(found)+"` ("+found+")"));
-	}
 
 	/**
 	 * Holds the information and parse state for JSON input for a single JSON object level.
@@ -423,6 +271,7 @@ public final class JsonStream implements InvocationHandler {
 		private final Map<String, Serializable> values = new HashMap<>();
 		boolean isOpened;
 		boolean isClosed;
+		boolean isContinued;
 		int n;
 		/**
 		 * the continuation input that is not yet been processed - if set we are at the start of that member value in the input stream
@@ -452,6 +301,7 @@ public final class JsonStream implements InvocationHandler {
 		void reset() {
 			isOpened = false;
 			isClosed = false;
+			isContinued = false;
 			currentContinuation = null;
 			values.clear();
 		}
@@ -510,7 +360,5 @@ public final class JsonStream implements InvocationHandler {
 			return 0;
 		}
 	}
-
-
 }
 
