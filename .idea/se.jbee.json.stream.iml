@@ -4,7 +4,6 @@
     <exclude-output />
     <content url="file://$MODULE_DIR$/se.jbee.json.stream">
       <sourceFolder url="file://$MODULE_DIR$/se.jbee.json.stream/main/java" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/se.jbee.json.stream/test/java" isTestSource="true" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -23,3 +23,6 @@
 hs_err_pid*
 
 .idea/sonarlint/issuestore/*
+
+.bach/bin
+.bach/workspace

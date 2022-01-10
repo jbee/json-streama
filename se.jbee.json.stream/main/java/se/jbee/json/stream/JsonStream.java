@@ -127,7 +127,7 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	private void readMembersToContinuation(JsonFrame frame) {
-		if (frame.isClosed || frame.encounteredContinuation != null)
+		if (frame.encounteredContinuation != null || frame.isClosed)
 			return;
 		int cp = ',';
 		if (!frame.isOpened) {

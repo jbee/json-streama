@@ -2,16 +2,46 @@ package se.jbee.json.stream;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Reader;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 
-record JsonParser(InputStream in) {
+record JsonParser(IntSupplier read) {
+
+	public JsonParser(InputStream in) {
+		this(readFromInputStream(in));
+	}
+
+	public JsonParser(Reader in) {
+		this(readFromReader(in));
+	}
+
+	private static IntSupplier readFromInputStream(InputStream in) {
+		return () -> {
+			try {
+				return in.read();
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
+			}
+		};
+	}
+
+	private static IntSupplier readFromReader(Reader in) {
+		return () -> {
+			try {
+				return in.read();
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
+			}
+		};
+	}
 
 	int readAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
@@ -52,16 +82,15 @@ record JsonParser(InputStream in) {
 	private int readNumber(int cp0, Consumer<Serializable> setter) {
 		StringBuilder n = new StringBuilder();
 		n.append((char) cp0);
-		try {
-			int cp = in.read();
+			int cp = read.getAsInt();
 			cp = readDigits(n, cp);
 			if (cp == '.') cp = readDigits(n, cp);
 			if (cp == 'e' || cp == 'E') {
 				n.append('e');
-				cp = in.read();
+				cp = read.getAsInt();
 				if (cp == '+' || cp == '-') {
 					n.append((char) cp);
-					cp = in.read();
+					cp = read.getAsInt();
 				}
 				cp = readDigits(n, cp);
 			}
@@ -73,16 +102,13 @@ record JsonParser(InputStream in) {
 				} else setter.accept(asLong);
 			} else setter.accept(number);
 			return cp;
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
 	}
 
-	private int readDigits(StringBuilder n, int cp0) throws IOException {
+	private int readDigits(StringBuilder n, int cp0) {
 		int cp = cp0;
 		while (isDigit(cp)) {
 			n.append((char) cp);
-			cp = in.read();
+			cp = read.getAsInt();
 		}
 		return cp;
 	}
@@ -99,46 +125,38 @@ record JsonParser(InputStream in) {
 
 	String readString() {
 		StringBuilder str = new StringBuilder();
-		try {
-			int cp = in.read();
-			while (cp != -1) {
-				if (cp == '"') {
-					// found the end (if escaped we would have hopped over)
-					return str.toString();
-				}
-				if (cp == '\\') {
-					cp = in.read();
-					switch (cp) {
-						case 'u' -> // unicode uXXXX
-								str.append(toChars(parseInt(new String(new int[]{in.read(), in.read(), in.read(), in.read()}, 0, 4), 16)));
-						case '\\' -> str.append('\\');
-						case '/' -> str.append('/');
-						case 'b' -> str.append('\b');
-						case 'f' -> str.append('\f');
-						case 'n' -> str.append('\n');
-						case 'r' -> str.append('\r');
-						case 't' -> str.append('\t');
-						case '"' -> str.append('"');
-						default -> throw formatException("escaped character or unicode sequence", cp);
-					}
-				} else {
-					str.appendCodePoint(cp);
-				}
-				cp = in.read();
+		int cp = read.getAsInt();
+		while (cp != -1) {
+			if (cp == '"') {
+				// found the end (if escaped we would have hopped over)
+				return str.toString();
 			}
-			throw formatException("end of string", -1);
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
+			if (cp == '\\') {
+				cp = read.getAsInt();
+				switch (cp) {
+					case 'u' -> // unicode uXXXX
+							str.append(toChars(parseInt(new String(new int[]{read.getAsInt(), read.getAsInt(), read.getAsInt(), read.getAsInt()}, 0, 4), 16)));
+					case '\\' -> str.append('\\');
+					case '/' -> str.append('/');
+					case 'b' -> str.append('\b');
+					case 'f' -> str.append('\f');
+					case 'n' -> str.append('\n');
+					case 'r' -> str.append('\r');
+					case 't' -> str.append('\t');
+					case '"' -> str.append('"');
+					default -> throw formatException("escaped character or unicode sequence", cp);
+				}
+			} else {
+				str.appendCodePoint(cp);
+			}
+			cp = read.getAsInt();
 		}
+		throw formatException("end of string", -1);
 	}
 
 	private void readSkip(int n) {
-		try {
-			for (int i = 0; i < n; i++)
-				if (in.read() == -1) throw formatException("at least " + (n - i) + " more character(s)", -1);
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
+		for (int i = 0; i < n; i++)
+			if (read.getAsInt() == -1) throw formatException("at least " + (n - i) + " more character(s)", -1);
 	}
 
 	void readCharSkipWhitespaceAndExpect(char expected) {
@@ -146,14 +164,10 @@ record JsonParser(InputStream in) {
 	}
 
 	int readCharSkipWhitespace() {
-		try {
-			int c = in.read();
-			while (c != -1 && Character.isWhitespace(c)) c = in.read();
-			if (c == -1) throw formatException("at least 1 more character", -1);
-			return c;
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
+		int c = read.getAsInt();
+		while (c != -1 && Character.isWhitespace(c)) c = read.getAsInt();
+		if (c == -1) throw formatException("at least 1 more character", -1);
+		return c;
 	}
 
 	private void expect(char expected, int cp) {
