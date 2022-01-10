@@ -1,5 +1,7 @@
 package se.jbee.json.stream;
 
+import se.jbee.json.stream.JsonMapping.JsonTo;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
@@ -116,7 +118,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private final JsonReader in;
 	private final JsonMapping mapping;
-	private final Map<Class<?>, JsonMapper<?>> mappersByToType = new HashMap<>();
+	private final Map<Class<?>, JsonTo<?>> mappersByToType = new HashMap<>();
 	/**
 	 * The currently processed frame is always at index 0 - this means the top most frame of the JSON structure is at the end.
 	 */
@@ -173,7 +175,7 @@ public final class JsonStream implements InvocationHandler {
 		return str.toString();
 	}
 
-	private JsonMapper<?> getMapper(Class<?> to) {
+	private JsonTo<?> getMapper(Class<?> to) {
 		return mappersByToType.computeIfAbsent(to, mapping::mapTo);
 	}
 
@@ -214,9 +216,9 @@ public final class JsonStream implements InvocationHandler {
 			return member.hasDefault() ? args[0] : member.nullValue();
 		Class<?> as = member.type();
 		if (value instanceof String s)
-			return as == String.class ? s : getMapper(as).mapString(s);
+			return as == String.class ? s : getMapper(as).mapString().apply(s);
 		if (value instanceof Boolean b)
-			return as == boolean.class || as == Boolean.class ? b : getMapper(as).mapBoolean(b);
+			return as == boolean.class || as == Boolean.class ? b : getMapper(as).mapBoolean().apply(b);
 		if (value instanceof Number n)
 			return yieldNumber(as, n);
 		throw new UnsupportedOperationException("JSON value not supported: "+ value);
@@ -229,7 +231,7 @@ public final class JsonStream implements InvocationHandler {
 		if (as == float.class || as == Float.class) return n.floatValue();
 		if (as == double.class || as == Double.class) return n.doubleValue();
 		if (as.isInstance(n)) return n;
-		return getMapper(as).mapNumber(n);
+		return getMapper(as).mapNumber().apply(n);
 	}
 
 	private Object yieldContinuation(Member member, Object[] args) {

@@ -1,47 +1,34 @@
 package se.jbee.json.stream;
 
+import se.jbee.json.stream.JsonMapping.JsonTo;
+
 import java.lang.reflect.Constructor;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-record AutoJsonMapper<T>(Class<T> to, Function<String, T> mapString, Function<Number, T> mapNumber, Function<Boolean, T> mapBoolean) implements JsonMapper<T> {
+final class AutoJsonMapper {
 
-	private static final Map<Class<?>, JsonMapper<?>> MAPPER_BY_TO_TYPE = new ConcurrentHashMap<>();
+	private AutoJsonMapper() {
+		throw new UnsupportedOperationException("util");
+	}
+
+	private static final Map<Class<?>, JsonTo<?>> MAPPER_BY_TO_TYPE = new ConcurrentHashMap<>();
 
 	static final JsonMapping SHARED = AutoJsonMapper::createMapperCached;
 
 	@SuppressWarnings("unchecked")
-	private static <T> JsonMapper<T> createMapperCached(Class<T> to) {
-		return (JsonMapper<T>) MAPPER_BY_TO_TYPE.computeIfAbsent(to, AutoJsonMapper::createMapper);
+	private static <T> JsonTo<T> createMapperCached(Class<T> to) {
+		return (JsonTo<T>) MAPPER_BY_TO_TYPE.computeIfAbsent(to, AutoJsonMapper::createMapper);
 	}
 
-	private static <T> JsonMapper<T> createMapper(Class<T> to) {
-		return new AutoJsonMapper<>(to, detect(String.class, to), detect(Number.class, to), detect(Boolean.class, to));
+	private static <T> JsonTo<T> createMapper(Class<T> to) {
+		return new JsonTo<>(to, detect(String.class, to), detect(Number.class, to), detect(Boolean.class, to));
 	}
 
-	@Override
-	public T mapString(String from) {
-		return mapString.apply(from);
-	}
-
-	@Override
-	public T mapNumber(Number from) {
-		return mapNumber.apply(from);
-	}
-
-	@Override
-	public T mapBoolean(boolean from) {
-		return mapBoolean.apply(from);
-	}
-
-	@SuppressWarnings("unchecked")
 	private static <A, B> Function<A, B> detect(Class<A> from, Class<B> to) {
-		if (to.isEnum()) {
-			if (from == String.class) return name -> (B) wrap(name, to);
-			if (from == Number.class) return ordinal -> to.getEnumConstants()[((Number)ordinal).intValue()];
-			if (from == Boolean.class) return flag -> to.getEnumConstants()[flag == Boolean.FALSE ? 0 : 1];
-		}
+		if (to.isEnum())
+			return mapToEnum(from, to);
 		try {
 			Constructor<B> c = to.getConstructor(from);
 			return value -> {
@@ -52,8 +39,18 @@ record AutoJsonMapper<T>(Class<T> to, Function<String, T> mapString, Function<Nu
 				}
 			};
 		} catch (NoSuchMethodException e) {
-			throw new RuntimeException(e);
+			return json -> {
+				throw new UnsupportedOperationException(String.format("Unknown conversion from %s (%s) to %s", json, from.getSimpleName(), to.getSimpleName()));
+			};
 		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <A, B> Function<A, B> mapToEnum(Class<A> from, Class<B> to) {
+		B[] constants = to.getEnumConstants();
+		if (from == String.class) return name -> (B) wrap(name, to);
+		if (from == Number.class) return ordinal -> constants[((Number)ordinal).intValue()];
+		return flag -> constants[flag == Boolean.FALSE ? 0 : 1];
 	}
 
 	@SuppressWarnings({"rawtypes", "unchecked"})
