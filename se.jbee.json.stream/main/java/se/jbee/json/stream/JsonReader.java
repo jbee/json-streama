@@ -7,11 +7,12 @@ import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+import static java.lang.Character.isWhitespace;
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 import static java.util.stream.Collectors.joining;
 
-record JsonParser(IntSupplier read, Supplier<String> printPosition) {
+record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 
 	int readAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
@@ -71,7 +72,7 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 					setter.accept((int) asLong);
 				} else setter.accept(asLong);
 			} else setter.accept(number);
-			return cp;
+			return isWhitespace(cp) ? readCharSkipWhitespace() : cp;
 	}
 
 	private int readDigits(StringBuilder n, int cp0) {

@@ -2,82 +2,88 @@ package test.integration;
 
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonFormatException;
-import se.jbee.json.stream.JsonMember;
 import se.jbee.json.stream.JsonStream;
 
 import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 
+import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TestJsonStream {
 
-	public interface Root {
-		int hello();
+	public interface Playlist {
+		String name();
 
-		String name(String defaultValue);
+		String author();
 
-		Stream<Element> elements();
+		Stream<Track> tracks();
 
-		Stream<Other> items();
-
-		void elements(Consumer<Element> consumer);
+		void tracks(Consumer<Track> consumer);
 	}
 
-	public interface Element {
+	public interface Track {
 
-		@JsonMember(key = true)
-		String key();
-
-		String id();
-
-		int age();
-
-		Stream<Element> children();
-	}
-
-	public interface Other {
-		boolean flag();
+		int no();
 
 		String name();
+
+		String artist();
+
+		long duration();
+
+		int stars();
+
+		float averageStars();
+
 	}
 
-	private static final String INPUT_A = "{"
-			+ "'hello':42,"
-			+ "'name':'yes',"
-			+ "'elements':[{'id':'1','age':13},{'id':'2','age':45, 'children':{'key':{'id':'x','age':66}}],"
-			+ "'items':[{'name':'itemA','flag':true}]"
-			+ "}";
+	public interface Album {
+
+		String name();
+
+		String artist();
+
+		Iterator<Track> tracks();
+	}
+
+	private static final String PLAYLIST_JSON = """
+			{
+				'name': 'Tom Waits Special',
+				'author': 'me',
+				'tracks': [
+					{ 'no': 1, 'name': 'I Never Talk to Strangers', 'stars':4 },
+					{ 'no': 2, 'name': 'Cold cold Ground', 'stars':5 }
+				]
+			}
+			""";
 
 	@Test
 	void objectRoot() {
-		IntSupplier parser = createParser(INPUT_A);
-		Root root = JsonStream.from(Root.class, parser);
+		Playlist list = JsonStream.ofRoot(Playlist.class, createParser(PLAYLIST_JSON));
 
-		assertEquals(42, root.hello());
-		assertEquals("yes", root.name("test"));
-		root.elements().forEachOrdered(e -> {
-			System.out.println(e.id() +"/"+ e.age());
-			e.children().forEachOrdered(c -> {
-				System.out.println(c.id() +"/"+ c.age()+"/"+c.key());
-				System.out.println(c.toString());
-			});
-		});
-		root.items().forEachOrdered(item -> {
-			System.out.println(item.flag() +"/"+ item.name());
-		});
+		assertEquals("me", list.author());
+		assertEquals("Tom Waits Special", list.name());
+		assertEquals(List.of("1. I Never Talk to Strangers ****", "2. Cold cold Ground *****"),
+				list.tracks().map(track -> track.no()+". "+track.name() +" "+("*".repeat(track.stars()))).collect(toList()));
 	}
 
 	@Test
 	void parseException() {
-		IntSupplier parser = createParser("[{'flag':true, 'name':'A'},null]");
-		Stream<Other> items = JsonStream.of(Other.class, parser);
+		Stream<Track> items = JsonStream.of(Track.class, createParser("""
+    [
+				{'no':1, 'name': 'Earth Died Screaming'},
+				null
+		]"""));
 
 		JsonFormatException ex = assertThrows(JsonFormatException.class,
-				() -> items.forEach(Other::name));
+				() -> items.forEach(Track::name));
 		assertEquals("""
 				Expected one of `]`,`{` but found: `n`
 				at: [... <1>
@@ -85,29 +91,54 @@ class TestJsonStream {
 	}
 
 	@Test
+	void illegalParentProxyCallIsDetected() {
+		Album album = JsonStream.ofRoot(Album.class, createParser("""
+				{
+					'name': 'Bone Machine',
+					'artist': 'Tom Waits',
+					'tracks': { 
+						'1': { 'name': 'Earth Died Screaming'},
+						'2': { 'name': 'Dirt in the Ground'},
+					}
+				}
+				"""));
+		Iterator<Track> tracks = album.tracks();
+		IllegalStateException ex = assertThrows(IllegalStateException.class, () -> tracks.forEachRemaining(track -> track.name().concat(album.artist())));
+		assertEquals("""
+			Parent proxy called out of order
+			at: {
+				"name": Bone Machine,
+				"artist": Tom Waits,
+				"tracks": [... <0>
+				{
+					"name": Earth Died Screaming,
+				}
+			<stream position>""", ex.getMessage());
+	}
+
+	@Test
 	void streamRoot() {
-		IntSupplier parser = createParser("[{'flag':true, 'name':'A'},{'name':'B'}]");
-		Stream<Other> items = JsonStream.of(Other.class, parser);
-		items.forEach(item ->  System.out.println(item.name()+" "+item.flag()));
+		Stream<Track> items = JsonStream.of(Track.class, createParser("""
+    [
+				{'no':1, 'name': 'Earth Died Screaming'},
+				{'no':2, 'name': 'Dirt in the Ground'}
+		]"""));
+		assertEquals(List.of("1. Earth Died Screaming", "2. Dirt in the Ground"),
+				items.map(track -> track.no()+". "+track.name()).collect(toList()));
 	}
 
 	@Test
 	void consumerRoot() {
-		IntSupplier parser = createParser(INPUT_A);
-		Root root = JsonStream.from(Root.class, parser);
+		Playlist list = JsonStream.ofRoot(Playlist.class, createParser(PLAYLIST_JSON));
 
-		assertEquals(42, root.hello());
-		assertEquals("yes", root.name("test"));
-		root.elements(e -> {
-			System.out.println(e.id() +"/"+ e.age());
-			e.children().forEachOrdered(c -> System.out.println(c.id() +"/"+ c.age()+"/"+c.key()));
-		});
-		root.items().forEachOrdered(item -> {
-			System.out.println(item.flag() +"/"+ item.name());
-		});
+		assertEquals("me", list.author());
+		assertEquals("Tom Waits Special", list.name());
+		List<String> actual = new ArrayList<>();
+		list.tracks(track -> actual.add(track.no()+". "+track.name() +" "+("*".repeat(track.stars()))));
+		assertEquals(List.of("1. I Never Talk to Strangers ****", "2. Cold cold Ground *****"), actual);
 	}
 
 	private static IntSupplier createParser(String json) {
-		return JsonStream.readFrom(new StringReader(json.replace('\'', '"')));
+		return JsonStream.from(new StringReader(json.replace('\'', '"')));
 	}
 }

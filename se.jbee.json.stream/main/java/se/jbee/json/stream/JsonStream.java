@@ -35,16 +35,18 @@ import static java.util.Collections.emptyIterator;
 import static java.util.Spliterators.spliteratorUnknownSize;
 
 /**
- * Reading complex JSON documents as streams using user defined {@link Proxy} interfaces and {@link Stream}/{@link
- * Iterator}s.
+ * Reading complex JSON documents as streams using user defined interfaces and {@link Stream}/{@link
+ * Iterator}s as API which is implemented with dynamic {@link Proxy} instances to make the stream data accessible.
  * <p>
  * (c) 2022
+ *
+ * The nesting of JSON input document is processed java stack independent, a stack overflow will not occur.
  *
  * @author Jan Bernitt
  */
 public final class JsonStream implements InvocationHandler {
 
-	public static IntSupplier readFrom(InputStream in) {
+	public static IntSupplier from(InputStream in) {
 		return () -> {
 			try {
 				return in.read();
@@ -54,7 +56,7 @@ public final class JsonStream implements InvocationHandler {
 		};
 	}
 
-	public static IntSupplier readFrom(Reader in) {
+	public static IntSupplier from(Reader in) {
 		return () -> {
 			try {
 				return in.read();
@@ -64,28 +66,14 @@ public final class JsonStream implements InvocationHandler {
 		};
 	}
 
-	// this is mainly convention based
-	// we assume:
-	// - all but Stream/Iterator typed methods are simple nodes of type boolean, number or string
-	// - any type that is not recognised is a wrapper on a simple node and we try to find the constructor for the value we actually found
-	// - if there are multiple stream children the order we expect is the order they are called or annotated
-	// - a "map" (object used as such) is also modelled as a stream of elements which have a key
-
-	// allow void methods with a Consumer<A> parameter to make sequence independent continuations
-	// this way the parser can see what member with a isContinuation type comes first and call the consumer for it
-	// could also allow Consumer<Stream<X>>
-
-	// When the item type is an interface we know we are doing sub-objects, otherwise we will assume primitive items and use special parsing and streams.
-
-	public static <T> T from(Class<T> rootObjType, IntSupplier in) {
-		return from(rootObjType, in, JsonMapping.auto());
+	public static <T> T ofRoot(Class<T> objType, IntSupplier in) {
+		return ofRoot(objType, in, JsonMapping.auto());
 	}
 
-	public static <T> T from(Class<T> rootObjType, IntSupplier in, JsonMapping mapping) {
-		// if we deal with a root object having members that "continue" the stream
+	public static <T> T ofRoot(Class<T> objType, IntSupplier in, JsonMapping mapping) {
 		JsonStream handler = new JsonStream(in, mapping);
-		handler.pushFrame(rootObjType);
-		return newProxy(rootObjType, handler);
+		handler.pushFrame(objType);
+		return newProxy(objType, handler);
 	}
 
 	public static <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
@@ -93,10 +81,8 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	public static <T> Stream<T> of(Class<T> streamType, IntSupplier in, JsonMapping mapping) {
-		// if we deal with a root array or "map" object treated as such
 		Member member = new Member(MemberProcessing.STREAM, "", Stream.class, streamType, false, Stream.empty());
 		JsonStream handler = new JsonStream(in, mapping);
-		//handler.pushFrame(streamType);
 		@SuppressWarnings("unchecked")
 		Stream<T> res = (Stream<T>) handler.yieldContinuation(member, new String[0]);
 		return res;
@@ -128,9 +114,7 @@ public final class JsonStream implements InvocationHandler {
 	private static final Map<Method, Member> MEMBERS_BY_METHOD = new ConcurrentHashMap<>();
 	private static final Map<Class<?>, Map<String, Member>> MEMBERS_BY_TYPE = new ConcurrentHashMap<>();
 
-	private static final String OBJECT_KEY = "(key)";
-
-	private final JsonParser in;
+	private final JsonReader in;
 	private final JsonMapping mapping;
 	private final Map<Class<?>, JsonMapper<?>> mappersByToType = new HashMap<>();
 	/**
@@ -139,7 +123,7 @@ public final class JsonStream implements InvocationHandler {
 	private final Deque<JsonFrame> stack = new LinkedList<>();
 
 	private JsonStream(IntSupplier in, JsonMapping mapping) {
-		this.in = new JsonParser(in, this::toString);
+		this.in = new JsonReader(in, this::toString);
 		this.mapping = mapping;
 	}
 
@@ -168,6 +152,8 @@ public final class JsonStream implements InvocationHandler {
 				String name = e.getKey();
 				String no = i < frames.size()-1 ? ""+(frames.get(i+1).itemNo) : "?";
 				Member member = members.get(name);
+				if (member == null)
+					continue;
 				if (!member.isContinuation()) {
 					str.append(indent).append("\t").append('"').append(name).append("\": ").append(v).append(",\n");
 				} else {
@@ -196,7 +182,8 @@ public final class JsonStream implements InvocationHandler {
 		if ("toString".equals(method.getName()))
 			return toString();
 		JsonFrame frame = currentFrame();
-		//TODO we could check the proxy type or the method declaring class to see if the call is for the current frame
+		if (!frame.type.isInstance(proxy))
+			throw new IllegalStateException("Parent proxy called out of order\nat: "+toString());
 		readMembersToContinuation(frame);
 		if (method.getReturnType().isRecord()) {
 			//TODO
@@ -306,7 +293,7 @@ public final class JsonStream implements InvocationHandler {
 			String key = in.readString();
 			in.readCharSkipWhitespaceAndExpect(':');
 			frame.nextInStream();
-			frame.setDirectValue(OBJECT_KEY, key);
+			frame.setDirectValue(JsonMember.OBJECT_KEY, key);
 			consumer.accept(newProxy(member.streamType(), this));
 			cp = in.readCharSkipWhitespace();
 		}
@@ -355,7 +342,7 @@ public final class JsonStream implements InvocationHandler {
 				if (frame.itemNo < 0) throw new NoSuchElementException("" + (-frame.itemNo + 1));
 				String key = in.readString(); // includes closing "
 				in.readCharSkipWhitespaceAndExpect(':');
-				frame.setDirectValue(OBJECT_KEY, key);
+				frame.setDirectValue(JsonMember.OBJECT_KEY, key);
 				return newProxy(member.streamType(), JsonStream.this);
 			}
 		};
@@ -520,7 +507,7 @@ public final class JsonStream implements InvocationHandler {
 				name = toLowerCase(name.charAt(2)) + name.substring(3);
 			if (member == null) return name;
 			if (!member.name().isEmpty()) return member.name();
-			if (member.key()) return OBJECT_KEY;
+			if (member.key()) return JsonMember.OBJECT_KEY;
 			return name;
 		}
 
