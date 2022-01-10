@@ -6,9 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
+import static java.util.stream.Collectors.joining;
 
 record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 
@@ -39,7 +41,7 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
 				return readNumber(cp, setter);
 			default:
-				throw formatException("start of JSON token", cp);
+				throw formatException(cp, '{', '[', '"', 'n', 't', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-');
 		}
 		return readCharSkipWhitespace();
 	}
@@ -113,19 +115,19 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 					case 'r' -> str.append('\r');
 					case 't' -> str.append('\t');
 					case '"' -> str.append('"');
-					default -> throw formatException("escaped character or unicode sequence", cp);
+					default -> throw formatException(cp, 'u', '\\', 'b', 'f', 'n', 'r', 't', '"');
 				}
 			} else {
 				str.appendCodePoint(cp);
 			}
 			cp = read.getAsInt();
 		}
-		throw formatException("end of string", -1);
+		throw formatException(-1, '"');
 	}
 
 	private void readSkip(int n) {
 		for (int i = 0; i < n; i++)
-			if (read.getAsInt() == -1) throw formatException("at least " + (n - i) + " more character(s)", -1);
+			if (read.getAsInt() == -1) throw formatException(-1);
 	}
 
 	void readCharSkipWhitespaceAndExpect(char expected) {
@@ -135,16 +137,19 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 	int readCharSkipWhitespace() {
 		int c = read.getAsInt();
 		while (c != -1 && Character.isWhitespace(c)) c = read.getAsInt();
-		if (c == -1) throw formatException("at least 1 more character", -1);
+		if (c == -1) throw formatException(-1);
 		return c;
 	}
 
 	private void expect(char expected, int cp) {
-		if (cp != expected) throw formatException("`" + expected + "`", cp);
+		if (cp != expected) throw formatException(cp, expected);
 	}
 
-	JsonFormatException formatException(String expected, int found) {
+	JsonFormatException formatException(int found, char... expected) {
 		String foundText = found == -1 ? "end of input" : "`" + Character.toString(found) + "`";
-		return new JsonFormatException("Expected " + expected + " but found: " + foundText + "\nat: " + printPosition.get());
+		String expectedText = expected.length == 0
+				? "more input"
+				: "one of "+new String(expected).chars().mapToObj(c -> "`" + (char)c + "`").collect(joining(","));
+		return new JsonFormatException("Expected " + expectedText + " but found: " + foundText + "\nat: " + printPosition.get());
 	}
 }

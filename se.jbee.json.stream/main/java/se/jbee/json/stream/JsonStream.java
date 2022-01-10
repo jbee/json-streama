@@ -182,9 +182,8 @@ public final class JsonStream implements InvocationHandler {
 				str.append(indent).append("}\n");
 			indent+="\t";
 		}
-		if (!frames.isEmpty() && !frames.get(0).isClosed) {
+		if (!frames.isEmpty() && !frames.get(0).isClosed)
 			str.append("\t".repeat((int) Math.max(0, frames.stream().filter(f -> !f.isClosed).count()-1))).append("<stream position>");
-		}
 		return str.toString();
 	}
 
@@ -252,14 +251,14 @@ public final class JsonStream implements InvocationHandler {
 			switch (cp) {
 				case '[' -> arrayViaConsumer(member, args);
 				case '{' -> objectViaConsumer(member, args);
-				default -> throw in.formatException("an array or object", cp);
+				default -> throw in.formatException(cp, '[', '{');
 			}
 			return null;
 		}
 		return switch (cp) {
 			case '[' -> arrayAsStream(member);
 			case '{' -> objectAsStream(member);
-			default -> throw in.formatException("an array or object", cp);
+			default -> throw in.formatException(cp, '[', '{');
 		};
 	}
 
@@ -277,7 +276,7 @@ public final class JsonStream implements InvocationHandler {
 		Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
 		while (cp != '}') {
 			if (cp != ',')
-				throw in.formatException("comma or end of object", cp);
+				throw in.formatException(cp, ',', '}');
 			in.readCharSkipWhitespaceAndExpect('"');
 			String name = in.readString();
 			in.readCharSkipWhitespaceAndExpect(':');
@@ -301,7 +300,7 @@ public final class JsonStream implements InvocationHandler {
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
 		while (cp != '}') {
-			if (cp != ',') throw in.formatException("comma or end of object", cp);
+			if (cp != ',') throw in.formatException(cp,  ',', '}');
 			in.readCharSkipWhitespaceAndExpect('{');
 			in.readCharSkipWhitespaceAndExpect('"');
 			String key = in.readString();
@@ -320,7 +319,7 @@ public final class JsonStream implements InvocationHandler {
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
 		while (cp != ']') {
-			if (cp != ',') throw in.formatException("comma or end of array", cp);
+			if (cp != ',') throw in.formatException(cp,  ',', ']');
 			in.readCharSkipWhitespaceAndExpect('{');
 			frame.nextInStream();
 			frame.isOpened = true;
@@ -343,10 +342,10 @@ public final class JsonStream implements InvocationHandler {
 				}
 				frame.nextInStream();
 				if (frame.itemNo > 0) {
-					if (cp != ',') throw in.formatException("comma or end of object", cp);
+					if (cp != ',') throw in.formatException(cp,  ',', '}');
 					cp = in.readCharSkipWhitespace();
 				}
-				if (cp != '"') throw in.formatException("double quotes of member name", cp);
+				if (cp != '"') throw in.formatException(cp, '"');
 				// at the end we always have read the opening double quote of the member name already
 				return true;
 			}
@@ -376,10 +375,10 @@ public final class JsonStream implements InvocationHandler {
 				}
 				frame.nextInStream();
 				if (frame.itemNo > 0) {
-					if (cp != ',') throw in.formatException("comma or end of array", cp);
+					if (cp != ',') throw in.formatException(cp,  ',', ']');
 					cp = in.readCharSkipWhitespace();
 				}
-				if (cp != '{') throw in.formatException("start of object or end of array", cp);
+				if (cp != '{') throw in.formatException(cp, ']', '{');
 				return true;
 			}
 
