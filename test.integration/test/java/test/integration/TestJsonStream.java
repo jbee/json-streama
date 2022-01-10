@@ -58,8 +58,8 @@ class TestJsonStream {
 				'name': 'Tom Waits Special',
 				'author': 'me',
 				'tracks': [
-					{ 'no': 1, 'name': 'I Never Talk to Strangers', 'stars':4 },
-					{ 'no': 2, 'name': 'Cold cold Ground', 'stars':5 }
+					{ 'no': 1, 'name': 'I Never Talk to Strangers', 'stars':4 , 'averageStars': 3.9 },
+					{ 'no': 2, 'name': 'Cold cold Ground', 'stars':5, 'averageStars': 4.7 }
 				]
 			}
 			""";
@@ -70,8 +70,8 @@ class TestJsonStream {
 
 		assertEquals("me", list.author());
 		assertEquals("Tom Waits Special", list.name());
-		assertEquals(List.of("1. I Never Talk to Strangers ****", "2. Cold cold Ground *****"),
-				list.tracks().map(track -> track.no()+". "+track.name() +" "+("*".repeat(track.stars()))).collect(toList()));
+		assertEquals(List.of("1. I Never Talk to Strangers **** (3.9)", "2. Cold cold Ground ***** (4.7)"),
+				list.tracks().map(track -> String.format("%d. %s %s (%.1f)", track.no(), track.name(), "*".repeat(track.stars()), track.averageStars())).collect(toList()));
 	}
 
 	@Test

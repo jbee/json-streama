@@ -55,7 +55,10 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 		n.append((char) cp0);
 			int cp = read.getAsInt();
 			cp = readDigits(n, cp);
-			if (cp == '.') cp = readDigits(n, cp);
+			if (cp == '.') {
+				n.append('.');
+				cp = readDigits(n, read.getAsInt());
+			}
 			if (cp == 'e' || cp == 'E') {
 				n.append('e');
 				cp = read.getAsInt();
