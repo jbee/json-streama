@@ -20,7 +20,7 @@ import java.util.stream.StreamSupport;
 
 import static java.util.Collections.emptyIterator;
 import static java.util.Spliterators.spliteratorUnknownSize;
-import static se.jbee.json.stream.JsonReader.formatException;
+import static se.jbee.json.stream.JsonParser.formatException;
 
 public final class JsonStream implements InvocationHandler {
 
@@ -74,7 +74,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private static final String OBJECT_KEY = "__KEY__";
 
-	private final JsonReader in;
+	private final JsonParser in;
 	private final JsonMapping mapping;
 	private final Map<Method, JsonMapper<?>> mappers = new HashMap<>();
 	/**
@@ -83,7 +83,7 @@ public final class JsonStream implements InvocationHandler {
 	private final Deque<JsonFrame> stack = new LinkedList<>();
 
 	private JsonStream( InputStream in, JsonMapping mapping) {
-		this.in = new JsonReader(in);
+		this.in = new JsonParser(in);
 		this.mapping = mapping;
 	}
 
@@ -95,19 +95,20 @@ public final class JsonStream implements InvocationHandler {
 		Member member = MEMBERS_BY_METHOD.get(method);
 		String name = member.name();
 		if (member.isContinuation()) {
-			if (!name.equals(frame.currentContinuation)) {
+			if (!name.equals(frame.encounteredContinuation)) {
 				if (frame.hasMember(name))
 					throw new IllegalStateException("A continuation member can only be used once");
 				// assume the input does not contain the requested member so its value is empty
-				frame.markAsProcessed(name);
+				frame.markAsConsumed(name);
 				return member.isStream() ? Stream.empty() : emptyIterator();
 			}
-			frame.markAsProcessed(name);
-			frame.currentContinuation = null; // allow going to next continuation
+			frame.markAsConsumed(name);
+			// what we have is what we now are going to handle so afterwards we could do next one
+			frame.encounteredContinuation = null;
 			int cp = in.readCharSkipWhitespace();
 			return switch (cp) {
-				case '[' -> arrayAsContinuation(member);
-				case '{' -> objectAsContinuation(member);
+				case '[' -> arrayAsStream(member);
+				case '{' -> objectAsStream(member);
 				default -> throw formatException("n array or object", cp);
 			};
 		}
@@ -125,7 +126,39 @@ public final class JsonStream implements InvocationHandler {
 		throw new UnsupportedOperationException("JSON value not supported: "+value);
 	}
 
-	private Object objectAsContinuation(Member member) {
+	private void readMembersToContinuation(JsonFrame frame) {
+		if (frame.isClosed || frame.encounteredContinuation != null)
+			return;
+		int cp = ',';
+		if (!frame.isOpened) {
+			in.readCharSkipWhitespaceAndExpect('{');
+			frame.isOpened = true;
+		} else if (frame.isContinued) {
+			cp = in.readCharSkipWhitespace();
+			frame.isContinued = false;
+		}
+		Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
+		while (cp != '}') {
+			if (cp != ',')
+				throw formatException("comma or end of object", cp);
+			in.readCharSkipWhitespaceAndExpect('"');
+			String name = in.readString();
+			in.readCharSkipWhitespaceAndExpect(':');
+			Member member = frameMembers.get(name);
+			if (member == null) {
+				//TODO skip value
+			} else if (member.isContinuation()) {
+				frame.encounteredContinuation = name;
+				frame.isContinued = true;
+				return;
+			}
+			frame.encounteredContinuation = null;
+			cp = in.readAutodetect(val -> frame.setMemberValue(name, val));
+		}
+		frame.isClosed = true;
+	}
+
+	private Object objectAsStream(Member member) {
 		JsonFrame frame = pushFrame(member);
 		Iterator<?> iter = new Iterator<Object>() {
 			@Override
@@ -152,7 +185,7 @@ public final class JsonStream implements InvocationHandler {
 				if (frame.n < 0)
 					throw new NoSuchElementException(""+(-frame.n+1));
 				frame.n++;
-				String key = in.readQuotedString(); // includes closing "
+				String key = in.readString(); // includes closing "
 				in.readCharSkipWhitespaceAndExpect(':');
 				frame.reset();
 				frame.setMemberValue(OBJECT_KEY, key);
@@ -162,7 +195,7 @@ public final class JsonStream implements InvocationHandler {
 		return member.isStream() ? toStream(iter) : iter;
 	}
 
-	private Object arrayAsContinuation(Member member) {
+	private Object arrayAsStream(Member member) {
 		JsonFrame frame = pushFrame(member);
 		Iterator<?> iter = new Iterator<Object>() {
 			@Override
@@ -202,7 +235,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private void popFrame(Member member) {
 		stack.removeFirst();
-		currentFrame().markAsProcessed(member.name());
+		currentFrame().markAsConsumed(member.name());
 	}
 
 	private JsonFrame pushFrame(Member member) {
@@ -225,41 +258,6 @@ public final class JsonStream implements InvocationHandler {
 		return (A) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(), new Class[] {type}, handler);
 	}
 
-	private void readMembersToContinuation(JsonFrame frame) {
-		if (frame.isClosed || frame.currentContinuation != null)
-			return;
-		int cp = ',';
-		if (!frame.isOpened) {
-			in.readCharSkipWhitespaceAndExpect('{');
-			frame.isOpened = true;
-		} else if (frame.isContinued) {
-			cp = in.readCharSkipWhitespace();
-			frame.isContinued = false;
-		}
-		Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
-		while (cp != '}') {
-			if (cp != ',')
-				throw formatException("comma or end of object", cp);
-			in.readCharSkipWhitespaceAndExpect('"');
-			String name = in.readQuotedString();
-			in.readCharSkipWhitespaceAndExpect(':');
-			Member member = frameMembers.get(name);
-			if (member == null) {
-				//TODO skip value
-			} else if (member.isContinuation()) {
-				frame.currentContinuation = name;
-				frame.isContinued = true;
-				return;
-			}
-			frame.currentContinuation = null;
-			cp = in.readAutodetect(val -> frame.setMemberValue(name, val));
-			if (cp != ',' && cp != '}') throw formatException("comma or end of object", cp);
-		}
-		frame.isClosed = true;
-	}
-
-
-
 	/**
 	 * Holds the information and parse state for JSON input for a single JSON object level.
 	 */
@@ -276,7 +274,7 @@ public final class JsonStream implements InvocationHandler {
 		/**
 		 * the continuation input that is not yet been processed - if set we are at the start of that member value in the input stream
 		 */
-		String currentContinuation;
+		String encounteredContinuation;
 
 		private JsonFrame(Class<?> type) {
 			this.type = type;
@@ -294,7 +292,7 @@ public final class JsonStream implements InvocationHandler {
 			return values.get(name);
 		}
 
-		void markAsProcessed(String name) {
+		void markAsConsumed(String name) {
 			setMemberValue(name, null);
 		}
 
@@ -302,7 +300,7 @@ public final class JsonStream implements InvocationHandler {
 			isOpened = false;
 			isClosed = false;
 			isContinued = false;
-			currentContinuation = null;
+			encounteredContinuation = null;
 			values.clear();
 		}
 	}

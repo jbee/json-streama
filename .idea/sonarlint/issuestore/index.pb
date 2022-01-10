@@ -1,3 +1,27 @@
 
 9
 	README.md,8/e/8ec9a00bfd09b3190ac6b22251dbb1aa95a0579d
+o
+?test.integration/test/java/test/integration/TestJsonStream.java,b/9/b976b39c5ccd33151228c5d5500ce7fde7ddb82f
+P
+ .bach/bach.info/module-info.java,d/d/dd7d1d19fef81b21831583e5069c437a2ac93242
+v
+Fse.jbee.json.stream/main/java/se/jbee/json/stream/AutoJsonMapping.java,2/1/217233a3cf1a004f43db507b91a5bae67c9852c0
+^
+.se.jbee.json.stream/main/java/module-info.java,1/c/1c483f8ddb25fe419761cd564db3eff68e2a8406
+[
++test.integration/test/java/module-info.java,7/7/7719b78a3ad2bb90095846ade7ff9cf26e78a9df
+q
+Ase.jbee.json.stream/main/java/se/jbee/json/stream/JsonMember.java,a/1/a191e4b82101ede6e4cbb2b8bf1d1d21766e7ac7
+r
+Bse.jbee.json.stream/main/java/se/jbee/json/stream/JsonMapping.java,8/d/8dcf8280655f7d30ed89acf98604bb4e8ae7a0fe
+q
+Ase.jbee.json.stream/main/java/se/jbee/json/stream/JsonMapper.java,a/1/a1ea5f518c9461ff0147e13370798b71d55a0ac0
+z
+Jse.jbee.json.stream/main/java/se/jbee/json/stream/JsonFormatException.java,d/8/d84b209817b6166a1a817e9e9f44494998889ba8
+k
+;se.jbee.json.stream/test/java/se/jbee/json/stream/Test.java,d/5/d52fc783a0bd51bc59557125f53dfdfaae23dd82
+q
+Ase.jbee.json.stream/main/java/se/jbee/json/stream/JsonParser.java,d/2/d29d0b48ee7b349067e4607ae780070c8f19ce4d
+q
+Ase.jbee.json.stream/main/java/se/jbee/json/stream/JsonStream.java,d/c/dca5ad4ab8277dc5bd9b964aa7be39d40f18caba

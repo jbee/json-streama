@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 
-record JsonReader(InputStream in) {
+record JsonParser(InputStream in) {
 
 	int readAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
@@ -35,7 +35,7 @@ record JsonReader(InputStream in) {
 				setter.accept(null);
 				break;
 			case '"':
-				setter.accept(readQuotedString());
+				setter.accept(readString());
 				break;
 			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
 				return readNumber(cp, setter);
@@ -97,7 +97,7 @@ record JsonReader(InputStream in) {
 		return new LinkedHashMap<>();
 	}
 
-	String readQuotedString() {
+	String readString() {
 		StringBuilder str = new StringBuilder();
 		try {
 			int cp = in.read();
