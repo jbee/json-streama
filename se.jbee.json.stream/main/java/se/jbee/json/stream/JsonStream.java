@@ -1,7 +1,10 @@
 package se.jbee.json.stream;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.Reader;
 import java.io.Serializable;
+import java.io.UncheckedIOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -15,14 +18,45 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
+import static java.lang.Character.isUpperCase;
+import static java.lang.Character.toLowerCase;
 import static java.util.Collections.emptyIterator;
 import static java.util.Spliterators.spliteratorUnknownSize;
 import static se.jbee.json.stream.JsonParser.formatException;
 
+/**
+ * Reading complex JSON documents as streams using user defined {@link Proxy} interfaces and {@link Stream}/{@link
+ * Iterator}s.
+ * <p>
+ * (c) 2022
+ *
+ * @author Jan Bernitt
+ */
 public final class JsonStream implements InvocationHandler {
+
+	public static IntSupplier readFrom(InputStream in) {
+		return () -> {
+			try {
+				return in.read();
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
+			}
+		};
+	}
+
+	public static IntSupplier readFrom(Reader in) {
+		return () -> {
+			try {
+				return in.read();
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
+			}
+		};
+	}
 
 	// this is mainly convention based
 	// we assume:
@@ -37,16 +71,29 @@ public final class JsonStream implements InvocationHandler {
 
 	// When the item type is an interface we know we are doing sub-objects, otherwise we will assume primitive items and use special parsing and streams.
 
-	public static <T> T of(Class<T> rootObjType, InputStream in) {
+	public static <T> T from(Class<T> rootObjType, IntSupplier in) {
+		return from(rootObjType, in, JsonMapping.create());
+	}
+
+	public static <T> T from(Class<T> rootObjType, IntSupplier in, JsonMapping mapping) {
 		// if we deal with a root object having members that "continue" the stream
-		JsonStream handler = new JsonStream(in, JsonMapping.create());
+		JsonStream handler = new JsonStream(in, mapping);
 		handler.pushFrame(rootObjType);
 		return newProxy(rootObjType, handler);
 	}
 
-	public static <T> Stream<T> ofItems(Class<T> itemType, InputStream in) {
+	public static <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
+		return of(streamType, in, JsonMapping.create());
+	}
+	
+	public static <T> Stream<T> of(Class<T> streamType, IntSupplier in, JsonMapping mapping) {
 		// if we deal with a root array or "map" object treated as such
-		return null;
+		Member member = new Member(true, "", Stream.class, streamType, false, Stream.empty());
+		JsonStream handler = new JsonStream(in, mapping);
+		handler.pushFrame(streamType);
+		@SuppressWarnings("unchecked")
+		Stream<T> res = (Stream<T>) handler.yieldContinuation(member);
+		return res;
 	}
 
 	private <T> void initStreamType(Class<T> type) {
@@ -58,7 +105,10 @@ public final class JsonStream implements InvocationHandler {
 					if (!m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers())) {
 						Member member = new Member(m);
 						MEMBERS_BY_METHOD.put(m, member);
-						membersByName.put(member.name(), member);
+						String name = member.name();
+						if (!membersByName.containsKey(name) || m.getParameterCount() == 0) {
+							membersByName.put(name, member);
+						}
 					}
 				}
 				return membersByName;
@@ -76,13 +126,13 @@ public final class JsonStream implements InvocationHandler {
 
 	private final JsonParser in;
 	private final JsonMapping mapping;
-	private final Map<Method, JsonMapper<?>> mappers = new HashMap<>();
+	private final Map<Class<?>, JsonMapper<?>> mappersByReturnType = new HashMap<>();
 	/**
 	 * The currently processed frame is always at index 0 - this means the top most frame of the JSON structure is at the end.
 	 */
 	private final Deque<JsonFrame> stack = new LinkedList<>();
 
-	private JsonStream( InputStream in, JsonMapping mapping) {
+	private JsonStream(IntSupplier in, JsonMapping mapping) {
 		this.in = new JsonParser(in);
 		this.mapping = mapping;
 	}
@@ -105,25 +155,40 @@ public final class JsonStream implements InvocationHandler {
 			frame.markAsConsumed(name);
 			// what we have is what we now are going to handle so afterwards we could do next one
 			frame.encounteredContinuation = null;
-			int cp = in.readCharSkipWhitespace();
-			return switch (cp) {
-				case '[' -> arrayAsStream(member);
-				case '{' -> objectAsStream(member);
-				default -> throw formatException("n array or object", cp);
-			};
+			return yieldContinuation(member);
 		}
-		Object value = frame.memberValue(name);
+		return yieldPrimitive(member, frame.memberValue(name), args);
+	}
+
+	private Object yieldPrimitive(Member member, Object value, Object[] args) {
 		if (value == null) {
 			return member.hasDefault() ? args[0] : member.nullValue();
 		}
-		JsonMapper<?> mapper = mappers.get(method);
+		Class<?> rt = member.returnType();
+		JsonMapper<?> mapper = mappersByReturnType.get(rt);
 		if (value instanceof String s)
-			return member.returnType() == String.class ? s : mapper.mapString(s);
-		if (value instanceof Number n)
-			return member.returnType() == int.class ? n.intValue() : mapper.mapNumber(n);
+			return rt == String.class ? s : mapper.mapString(s);
 		if (value instanceof Boolean b)
-			return member.returnType() == boolean.class ? b : mapper.mapBoolean(b);
-		throw new UnsupportedOperationException("JSON value not supported: "+value);
+			return rt == boolean.class ? b : mapper.mapBoolean(b);
+		if (value instanceof Number n) {
+			if (rt == Number.class) return n;
+			if (rt == int.class || rt == Integer.class) return n.intValue();
+			if (rt == long.class || rt == Long.class) return n.longValue();
+			if (rt == float.class || rt == Float.class) return n.floatValue();
+			if (rt == double.class || rt == Double.class) return n.doubleValue();
+			if (rt.isInstance(n)) return n;
+			return mapper.mapNumber(n);
+		}
+		throw new UnsupportedOperationException("JSON value not supported: "+ value);
+	}
+
+	private Object yieldContinuation(Member member) {
+		int cp = in.readCharSkipWhitespace();
+		return switch (cp) {
+			case '[' -> arrayAsStream(member);
+			case '{' -> objectAsStream(member);
+			default -> throw formatException("n array or object", cp);
+		};
 	}
 
 	private void readMembersToContinuation(JsonFrame frame) {
@@ -332,7 +397,16 @@ public final class JsonStream implements InvocationHandler {
 		}
 
 		private static String name(Method m) {
-			return m.getName();
+			JsonMember member = m.getAnnotation(JsonMember.class);
+			String name = m.getName();
+			if (name.startsWith("get") && name.length() > 3 && isUpperCase(name.charAt(3))) {
+				name = toLowerCase(name.charAt(3)) + name.substring(4);
+			} else if (name.startsWith("is") && name.length() > 2 && isUpperCase(name.charAt(2)))
+				name = toLowerCase(name.charAt(2)) + name.substring(3);
+			if (member == null) return name;
+			if (!member.name().isEmpty()) return member.name();
+			if (member.key()) return OBJECT_KEY;
+			return name;
 		}
 
 		private static Class<?> streamType(Method m) {
@@ -347,14 +421,17 @@ public final class JsonStream implements InvocationHandler {
 
 		private static Object nullValue(Method m) {
 			Class<?> rt = m.getReturnType();
-			if (!rt.isPrimitive())
+			if (!rt.isPrimitive()) {
+				if (!isContinuation(m)) return null;
+				if (m.getReturnType() == Stream.class) return Stream.empty();
+				if (m.getReturnType() == Iterator.class) return emptyIterator();
 				return null;
-			if (rt == long.class)
-				return 0L;
-			if (rt == float.class)
-				return 0f;
-			if (rt == double.class)
-				return 0d;
+			}
+			if (rt == long.class)		return 0L;
+			if (rt == float.class)	return 0f;
+			if (rt == double.class)	return 0d;
+			if (rt == boolean.class)return false;
+			if (rt == void.class)		return null;
 			return 0;
 		}
 	}

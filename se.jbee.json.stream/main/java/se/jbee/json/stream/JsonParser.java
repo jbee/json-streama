@@ -15,34 +15,6 @@ import static java.lang.Integer.parseInt;
 
 record JsonParser(IntSupplier read) {
 
-	public JsonParser(InputStream in) {
-		this(readFromInputStream(in));
-	}
-
-	public JsonParser(Reader in) {
-		this(readFromReader(in));
-	}
-
-	private static IntSupplier readFromInputStream(InputStream in) {
-		return () -> {
-			try {
-				return in.read();
-			} catch (IOException ex) {
-				throw new UncheckedIOException(ex);
-			}
-		};
-	}
-
-	private static IntSupplier readFromReader(Reader in) {
-		return () -> {
-			try {
-				return in.read();
-			} catch (IOException ex) {
-				throw new UncheckedIOException(ex);
-			}
-		};
-	}
-
 	int readAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
 		switch (cp) {
