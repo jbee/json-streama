@@ -1,19 +1,16 @@
 package se.jbee.json.stream;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.Reader;
 import java.io.Serializable;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 
-record JsonParser(IntSupplier read) {
+record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 
 	int readAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
@@ -146,7 +143,8 @@ record JsonParser(IntSupplier read) {
 		if (cp != expected) throw formatException("`" + expected + "`", cp);
 	}
 
-	static JsonFormatException formatException(String expected, int found) {
-		return new JsonFormatException("Expected " + expected + " but found: " + (found == -1 ? "end of input" : "`" + Character.toString(found) + "` (" + found + ")"));
+	JsonFormatException formatException(String expected, int found) {
+		String foundText = found == -1 ? "end of input" : "`" + Character.toString(found) + "`";
+		return new JsonFormatException("Expected " + expected + " but found: " + foundText + "\nat: " + printPosition.get());
 	}
 }

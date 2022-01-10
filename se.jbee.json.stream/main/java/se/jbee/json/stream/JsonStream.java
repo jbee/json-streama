@@ -11,12 +11,17 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -28,7 +33,6 @@ import static java.lang.Character.isUpperCase;
 import static java.lang.Character.toLowerCase;
 import static java.util.Collections.emptyIterator;
 import static java.util.Spliterators.spliteratorUnknownSize;
-import static se.jbee.json.stream.JsonParser.formatException;
 
 /**
  * Reading complex JSON documents as streams using user defined {@link Proxy} interfaces and {@link Stream}/{@link
@@ -92,7 +96,7 @@ public final class JsonStream implements InvocationHandler {
 		// if we deal with a root array or "map" object treated as such
 		Member member = new Member(MemberProcessing.STREAM, "", Stream.class, streamType, false, Stream.empty());
 		JsonStream handler = new JsonStream(in, mapping);
-		handler.pushFrame(streamType);
+		//handler.pushFrame(streamType);
 		@SuppressWarnings("unchecked")
 		Stream<T> res = (Stream<T>) handler.yieldContinuation(member, new String[0]);
 		return res;
@@ -124,7 +128,7 @@ public final class JsonStream implements InvocationHandler {
 	private static final Map<Method, Member> MEMBERS_BY_METHOD = new ConcurrentHashMap<>();
 	private static final Map<Class<?>, Map<String, Member>> MEMBERS_BY_TYPE = new ConcurrentHashMap<>();
 
-	private static final String OBJECT_KEY = "__KEY__";
+	private static final String OBJECT_KEY = "(key)";
 
 	private final JsonParser in;
 	private final JsonMapping mapping;
@@ -135,8 +139,53 @@ public final class JsonStream implements InvocationHandler {
 	private final Deque<JsonFrame> stack = new LinkedList<>();
 
 	private JsonStream(IntSupplier in, JsonMapping mapping) {
-		this.in = new JsonParser(in);
+		this.in = new JsonParser(in, this::toString);
 		this.mapping = mapping;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder str = new StringBuilder();
+		List<JsonFrame> frames = new ArrayList<>();
+		stack.descendingIterator().forEachRemaining(frames::add);
+		String indent = "";
+		boolean isRootArray = !frames.isEmpty() && frames.get(0).itemNo >= 0;
+		if (isRootArray) {
+			str.append("[... <").append(frames.get(0).itemNo).append(">\n");
+			indent += '\t';
+		}
+		for (int i = 0; i < frames.size(); i++) {
+			JsonFrame f = frames.get(i);
+			Map<String, Member> members = MEMBERS_BY_TYPE.get(f.type);
+			if (!f.isOpened)
+				continue;
+			str.append(indent).append("{\n");
+			Set<Entry<String, Serializable>> entries = f.values.entrySet();
+			int n = 0;
+			for (Entry<String, Serializable> e : entries) {
+				n++;
+				Serializable v = e.getValue();
+				String name = e.getKey();
+				String no = i < frames.size()-1 ? ""+(frames.get(i+1).itemNo) : "?";
+				Member member = members.get(name);
+				if (!member.isContinuation()) {
+					str.append(indent).append("\t").append('"').append(name).append("\": ").append(v).append(",\n");
+				} else {
+					str.append(indent).append("\t").append('"').append(name);
+					if (n == entries.size()) {
+						str.append("\": [... <").append(no).append(">\n");
+					} else
+						str.append(" [...],\n");
+				}
+			}
+			if (f.isClosed)
+				str.append(indent).append("}\n");
+			indent+="\t";
+		}
+		if (!frames.isEmpty() && !frames.get(0).isClosed) {
+			str.append("\t".repeat((int) Math.max(0, frames.stream().filter(f -> !f.isClosed).count()-1))).append("<stream position>");
+		}
+		return str.toString();
 	}
 
 	private JsonMapper<?> getMapper(Class<?> to) {
@@ -145,6 +194,8 @@ public final class JsonStream implements InvocationHandler {
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args) {
+		if ("toString".equals(method.getName()))
+			return toString();
 		JsonFrame frame = currentFrame();
 		//TODO we could check the proxy type or the method declaring class to see if the call is for the current frame
 		readMembersToContinuation(frame);
@@ -201,14 +252,14 @@ public final class JsonStream implements InvocationHandler {
 			switch (cp) {
 				case '[' -> arrayViaConsumer(member, args);
 				case '{' -> objectViaConsumer(member, args);
-				default -> throw formatException("an array or object", cp);
+				default -> throw in.formatException("an array or object", cp);
 			}
 			return null;
 		}
 		return switch (cp) {
 			case '[' -> arrayAsStream(member);
 			case '{' -> objectAsStream(member);
-			default -> throw formatException("an array or object", cp);
+			default -> throw in.formatException("an array or object", cp);
 		};
 	}
 
@@ -226,7 +277,7 @@ public final class JsonStream implements InvocationHandler {
 		Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
 		while (cp != '}') {
 			if (cp != ',')
-				throw formatException("comma or end of object", cp);
+				throw in.formatException("comma or end of object", cp);
 			in.readCharSkipWhitespaceAndExpect('"');
 			String name = in.readString();
 			in.readCharSkipWhitespaceAndExpect(':');
@@ -250,14 +301,13 @@ public final class JsonStream implements InvocationHandler {
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
 		while (cp != '}') {
-			if (cp != ',') throw formatException("comma or end of object", cp);
+			if (cp != ',') throw in.formatException("comma or end of object", cp);
 			in.readCharSkipWhitespaceAndExpect('{');
 			in.readCharSkipWhitespaceAndExpect('"');
 			String key = in.readString();
 			in.readCharSkipWhitespaceAndExpect(':');
-			frame.setDirectValue(OBJECT_KEY, key);
 			frame.nextInStream();
-			frame.itemNo++;
+			frame.setDirectValue(OBJECT_KEY, key);
 			consumer.accept(newProxy(member.streamType(), this));
 			cp = in.readCharSkipWhitespace();
 		}
@@ -270,11 +320,10 @@ public final class JsonStream implements InvocationHandler {
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
 		while (cp != ']') {
-			if (cp != ',') throw formatException("comma or end of array", cp);
+			if (cp != ',') throw in.formatException("comma or end of array", cp);
 			in.readCharSkipWhitespaceAndExpect('{');
 			frame.nextInStream();
 			frame.isOpened = true;
-			frame.itemNo++;
 			consumer.accept(newProxy(member.streamType(), this));
 			cp = in.readCharSkipWhitespace();
 		}
@@ -292,11 +341,12 @@ public final class JsonStream implements InvocationHandler {
 					popFrame(member);
 					return false;
 				}
+				frame.nextInStream();
 				if (frame.itemNo > 0) {
-					if (cp != ',') throw formatException("comma or end of object", cp);
+					if (cp != ',') throw in.formatException("comma or end of object", cp);
 					cp = in.readCharSkipWhitespace();
 				}
-				if (cp != '"') throw formatException("double quotes of member name", cp);
+				if (cp != '"') throw in.formatException("double quotes of member name", cp);
 				// at the end we always have read the opening double quote of the member name already
 				return true;
 			}
@@ -304,10 +354,8 @@ public final class JsonStream implements InvocationHandler {
 			@Override
 			public Object next() {
 				if (frame.itemNo < 0) throw new NoSuchElementException("" + (-frame.itemNo + 1));
-				frame.itemNo++;
 				String key = in.readString(); // includes closing "
 				in.readCharSkipWhitespaceAndExpect(':');
-				frame.nextInStream();
 				frame.setDirectValue(OBJECT_KEY, key);
 				return newProxy(member.streamType(), JsonStream.this);
 			}
@@ -326,20 +374,19 @@ public final class JsonStream implements InvocationHandler {
 					popFrame(member);
 					return false;
 				}
+				frame.nextInStream();
 				if (frame.itemNo > 0) {
-					if (cp != ',') throw formatException("comma or end of array", cp);
+					if (cp != ',') throw in.formatException("comma or end of array", cp);
 					cp = in.readCharSkipWhitespace();
 				}
-				if (cp != '{') throw formatException("start of object or end of array", cp);
+				if (cp != '{') throw in.formatException("start of object or end of array", cp);
 				return true;
 			}
 
 			@Override
 			public Object next() {
 				if (frame.itemNo < 0) throw new NoSuchElementException("" + (-frame.itemNo + 1));
-				frame.nextInStream();
 				frame.isOpened = true; // { already read by hasNext
-				frame.itemNo++;
 				return newProxy(member.streamType(), JsonStream.this);
 			}
 		};
@@ -347,12 +394,14 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	private JsonFrame currentFrame() {
-		return stack.getFirst();
+		return stack.peekFirst();
 	}
 
 	private void popFrame(Member member) {
 		stack.removeFirst();
-		currentFrame().markAsConsumed(member.name());
+		JsonFrame frame = currentFrame();
+		if (frame != null)
+			frame.markAsConsumed(member.name());
 	}
 
 	private JsonFrame pushFrame(Member member) {
@@ -383,11 +432,11 @@ public final class JsonStream implements InvocationHandler {
 		/**
 		 * The values of members read so far, for continuation a null value is put once the continuation was used once.
 		 */
-		private final Map<String, Serializable> values = new HashMap<>();
+		private final Map<String, Serializable> values = new LinkedHashMap<>();
 		boolean isOpened;
 		boolean isClosed;
 		boolean isContinued;
-		int itemNo;
+		int itemNo = -1;
 		/**
 		 * the continuation input that is not yet been processed - if set we are at the start of that member value in the input stream
 		 */
@@ -414,6 +463,7 @@ public final class JsonStream implements InvocationHandler {
 		}
 
 		void nextInStream() {
+			itemNo++;
 			isOpened = false;
 			isClosed = false;
 			isContinued = false;
