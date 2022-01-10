@@ -35,7 +35,13 @@ record AutoJsonMapper<T>(Class<T> to, Function<String, T> mapString, Function<Nu
 		return mapBoolean.apply(from);
 	}
 
+	@SuppressWarnings("unchecked")
 	private static <A, B> Function<A, B> detect(Class<A> from, Class<B> to) {
+		if (to.isEnum()) {
+			if (from == String.class) return name -> (B) wrap(name, to);
+			if (from == Number.class) return ordinal -> to.getEnumConstants()[((Number)ordinal).intValue()];
+			if (from == Boolean.class) return flag -> to.getEnumConstants()[flag == Boolean.FALSE ? 0 : 1];
+		}
 		try {
 			Constructor<B> c = to.getConstructor(from);
 			return value -> {
@@ -48,6 +54,11 @@ record AutoJsonMapper<T>(Class<T> to, Function<String, T> mapString, Function<Nu
 		} catch (NoSuchMethodException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	@SuppressWarnings({"rawtypes", "unchecked"})
+	private static <E extends Enum<E>> Enum<?> wrap(Object from, Class to) {
+		return Enum.valueOf(to, from.toString());
 	}
 
 }

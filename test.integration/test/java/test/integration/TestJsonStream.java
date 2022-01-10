@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TestJsonStream {
 
+	public enum Genre { Jazz, Pop }
+
 	public interface Playlist {
 		String name();
 
@@ -50,6 +52,8 @@ class TestJsonStream {
 
 		String artist();
 
+		Genre genre();
+
 		Iterator<Track> tracks();
 	}
 
@@ -66,7 +70,7 @@ class TestJsonStream {
 
 	@Test
 	void objectRoot() {
-		Playlist list = JsonStream.ofRoot(Playlist.class, createParser(PLAYLIST_JSON));
+		Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
 
 		assertEquals("me", list.author());
 		assertEquals("Tom Waits Special", list.name());
@@ -76,7 +80,7 @@ class TestJsonStream {
 
 	@Test
 	void parseException() {
-		Stream<Track> items = JsonStream.of(Track.class, createParser("""
+		Stream<Track> items = JsonStream.of(Track.class, asJsonInput("""
     [
 				{'no':1, 'name': 'Earth Died Screaming'},
 				null
@@ -92,16 +96,20 @@ class TestJsonStream {
 
 	@Test
 	void illegalParentProxyCallIsDetected() {
-		Album album = JsonStream.ofRoot(Album.class, createParser("""
+		Album album = JsonStream.ofRoot(Album.class, asJsonInput("""
 				{
 					'name': 'Bone Machine',
 					'artist': 'Tom Waits',
+					'genre': 'Jazz',
 					'tracks': { 
 						'1': { 'name': 'Earth Died Screaming'},
 						'2': { 'name': 'Dirt in the Ground'},
 					}
 				}
 				"""));
+
+		assertEquals(Genre.Jazz, album.genre());
+
 		Iterator<Track> tracks = album.tracks();
 		IllegalStateException ex = assertThrows(IllegalStateException.class, () -> tracks.forEachRemaining(track -> track.name().concat(album.artist())));
 		assertEquals("""
@@ -109,6 +117,7 @@ class TestJsonStream {
 			at: {
 				"name": Bone Machine,
 				"artist": Tom Waits,
+				"genre": Jazz,
 				"tracks": [... <0>
 				{
 					"name": Earth Died Screaming,
@@ -118,18 +127,19 @@ class TestJsonStream {
 
 	@Test
 	void streamRoot() {
-		Stream<Track> items = JsonStream.of(Track.class, createParser("""
+		Stream<Track> items = JsonStream.of(Track.class, asJsonInput("""
     [
 				{'no':1, 'name': 'Earth Died Screaming'},
 				{'no':2, 'name': 'Dirt in the Ground'}
 		]"""));
+
 		assertEquals(List.of("1. Earth Died Screaming", "2. Dirt in the Ground"),
 				items.map(track -> track.no()+". "+track.name()).collect(toList()));
 	}
 
 	@Test
 	void consumerRoot() {
-		Playlist list = JsonStream.ofRoot(Playlist.class, createParser(PLAYLIST_JSON));
+		Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
 
 		assertEquals("me", list.author());
 		assertEquals("Tom Waits Special", list.name());
@@ -138,7 +148,7 @@ class TestJsonStream {
 		assertEquals(List.of("1. I Never Talk to Strangers ****", "2. Cold cold Ground *****"), actual);
 	}
 
-	private static IntSupplier createParser(String json) {
+	private static IntSupplier asJsonInput(String json) {
 		return JsonStream.from(new StringReader(json.replace('\'', '"')));
 	}
 }
