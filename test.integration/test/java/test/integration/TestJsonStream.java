@@ -5,6 +5,7 @@ import se.jbee.json.stream.JsonMember;
 import se.jbee.json.stream.JsonStream;
 
 import java.io.StringReader;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 
@@ -20,6 +21,8 @@ class TestJsonStream {
 		Stream<Element> elements();
 
 		Stream<Other> items();
+
+		void elements(Consumer<Element> consumer);
 	}
 
 	public interface Element {
@@ -40,14 +43,16 @@ class TestJsonStream {
 		String name();
 	}
 
+	private static final String INPUT_A = "{"
+			+ "'hello':42,"
+			+ "'name':null,"
+			+ "'elements':[{'id':'1','age':13},{'id':'2','age':45, 'children':{'key':{'id':'x','age':66}}],"
+			+ "'items':[{'name':'itemA','flag':true}]"
+			+ "}";
+
 	@Test
 	void objectRoot() {
-		IntSupplier parser = createParser("{" +
-				"'hello':42," +
-				"'name':null," +
-				"'elements':[{'id':'1','age':13},{'id':'2','age':45, 'children':{'key':{'id':'x','age':66}}]," +
-				"'items':[{'name':'itemA','flag':true}]" +
-				"}");
+		IntSupplier parser = createParser(INPUT_A);
 		Root root = JsonStream.from(Root.class, parser);
 
 		assertEquals(42, root.hello());
@@ -68,6 +73,21 @@ class TestJsonStream {
 		items.forEach(item ->  System.out.println(item.name()+" "+item.flag()));
 	}
 
+	@Test
+	void consumerRoot() {
+		IntSupplier parser = createParser(INPUT_A);
+		Root root = JsonStream.from(Root.class, parser);
+
+		assertEquals(42, root.hello());
+		assertEquals("test", root.name("test"));
+		root.elements(e -> {
+			System.out.println(e.id() +"/"+ e.age());
+			e.children().forEachOrdered(c -> System.out.println(c.id() +"/"+ c.age()+"/"+c.key()));
+		});
+		root.items().forEachOrdered(item -> {
+			System.out.println(item.flag() +"/"+ item.name());
+		});
+	}
 
 	private static IntSupplier createParser(String json) {
 		return JsonStream.readFrom(new StringReader(json.replace('\'', '"')));
