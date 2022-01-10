@@ -1,7 +1,7 @@
 package test.integration;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonFormatException;
 import se.jbee.json.stream.JsonMember;
 import se.jbee.json.stream.JsonStream;
 
@@ -11,7 +11,7 @@ import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TestJsonStream {
 
@@ -75,7 +75,13 @@ class TestJsonStream {
 	void parseException() {
 		IntSupplier parser = createParser("[{'flag':true, 'name':'A'},null]");
 		Stream<Other> items = JsonStream.of(Other.class, parser);
-		items.forEach(c -> {c.name();System.out.println(c.toString());});
+
+		JsonFormatException ex = assertThrows(JsonFormatException.class,
+				() -> items.forEach(Other::name));
+		assertEquals("""
+				Expected one of `]`,`{` but found: `n`
+				at: [... <1>
+				<stream position>""", ex.getMessage());
 	}
 
 	@Test

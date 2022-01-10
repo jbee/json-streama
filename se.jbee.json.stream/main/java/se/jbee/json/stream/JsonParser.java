@@ -6,7 +6,6 @@ import java.util.LinkedHashMap;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
