@@ -17,6 +17,8 @@ final class AutoJsonMapper {
 
 	static final JsonMapping SHARED = AutoJsonMapper::createMapperCached;
 
+	//TODO move cache to interface
+
 	@SuppressWarnings("unchecked")
 	private static <T> JsonTo<T> createMapperCached(Class<T> to) {
 		return (JsonTo<T>) MAPPER_BY_TO_TYPE.computeIfAbsent(to, AutoJsonMapper::createMapper);
@@ -39,9 +41,7 @@ final class AutoJsonMapper {
 				}
 			};
 		} catch (NoSuchMethodException e) {
-			return json -> {
-				throw new UnsupportedOperationException(String.format("Unknown conversion from %s (%s) to %s", json, from.getSimpleName(), to.getSimpleName()));
-			};
+			return JsonMapping.unsupported(from, to);
 		}
 	}
 

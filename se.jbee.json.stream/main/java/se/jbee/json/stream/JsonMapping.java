@@ -8,6 +8,12 @@ public interface JsonMapping {
 		return AutoJsonMapper.SHARED;
 	}
 
+	static <A, B> Function<A, B> unsupported(Class<A> from, Class<B> to) {
+		return json -> {
+			throw new UnsupportedOperationException(String.format("Unknown conversion from %s (%s) to %s", json, from.getSimpleName(), to.getSimpleName()));
+		};
+	}
+
 	<T> JsonTo<T> mapTo(Class<T> to);
 
 	record JsonTo<T>(

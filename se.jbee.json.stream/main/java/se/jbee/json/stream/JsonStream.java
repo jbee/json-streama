@@ -74,8 +74,8 @@ public final class JsonStream implements InvocationHandler {
 
 	public static <T> T ofRoot(Class<T> objType, IntSupplier in, JsonMapping mapping) {
 		JsonStream handler = new JsonStream(in, mapping);
-		handler.pushFrame(objType);
-		return newProxy(objType, handler);
+		JsonFrame<T> frame = handler.pushFrame(objType);
+		return frame.proxy;
 	}
 
 	public static <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
@@ -118,11 +118,11 @@ public final class JsonStream implements InvocationHandler {
 
 	private final JsonReader in;
 	private final JsonMapping mapping;
-	private final Map<Class<?>, JsonTo<?>> mappersByToType = new HashMap<>();
+	private final Map<Class<?>, JsonTo<?>> jsonToAny = new HashMap<>();
 	/**
 	 * The currently processed frame is always at index 0 - this means the top most frame of the JSON structure is at the end.
 	 */
-	private final Deque<JsonFrame> stack = new LinkedList<>();
+	private final Deque<JsonFrame<?>> stack = new LinkedList<>();
 
 	private JsonStream(IntSupplier in, JsonMapping mapping) {
 		this.in = new JsonReader(in, this::toString);
@@ -132,7 +132,7 @@ public final class JsonStream implements InvocationHandler {
 	@Override
 	public String toString() {
 		StringBuilder str = new StringBuilder();
-		List<JsonFrame> frames = new ArrayList<>();
+		List<JsonFrame<?>> frames = new ArrayList<>();
 		stack.descendingIterator().forEachRemaining(frames::add);
 		String indent = "";
 		boolean isRootArray = !frames.isEmpty() && frames.get(0).itemNo >= 0;
@@ -141,7 +141,7 @@ public final class JsonStream implements InvocationHandler {
 			indent += '\t';
 		}
 		for (int i = 0; i < frames.size(); i++) {
-			JsonFrame f = frames.get(i);
+			JsonFrame<?> f = frames.get(i);
 			Map<String, Member> members = MEMBERS_BY_TYPE.get(f.type);
 			if (!f.isOpened)
 				continue;
@@ -175,15 +175,15 @@ public final class JsonStream implements InvocationHandler {
 		return str.toString();
 	}
 
-	private JsonTo<?> getMapper(Class<?> to) {
-		return mappersByToType.computeIfAbsent(to, mapping::mapTo);
+	private JsonTo<?> jsonTo(Class<?> to) {
+		return jsonToAny.computeIfAbsent(to, mapping::mapTo);
 	}
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args) {
 		if ("toString".equals(method.getName()))
 			return toString();
-		JsonFrame frame = currentFrame();
+		JsonFrame<?> frame = currentFrame();
 		if (!frame.type.isInstance(proxy))
 			throw new IllegalStateException("Parent proxy called out of order\nat: "+toString());
 		readMembersToContinuation(frame);
@@ -193,7 +193,7 @@ public final class JsonStream implements InvocationHandler {
 		return yieldValue(frame, MEMBERS_BY_METHOD.get(method), args);
 	}
 
-	private Object yieldValue(JsonFrame frame, Member member, Object[] args) {
+	private Object yieldValue(JsonFrame<?> frame, Member member, Object[] args) {
 		String name = member.name();
 		if (member.isContinuation()) {
 			if (!name.equals(frame.encounteredContinuation)) {
@@ -216,9 +216,9 @@ public final class JsonStream implements InvocationHandler {
 			return member.hasDefault() ? args[0] : member.nullValue();
 		Class<?> as = member.type();
 		if (value instanceof String s)
-			return as == String.class ? s : getMapper(as).mapString().apply(s);
+			return as == String.class ? s : jsonTo(as).mapString().apply(s);
 		if (value instanceof Boolean b)
-			return as == boolean.class || as == Boolean.class ? b : getMapper(as).mapBoolean().apply(b);
+			return as == boolean.class || as == Boolean.class ? b : jsonTo(as).mapBoolean().apply(b);
 		if (value instanceof Number n)
 			return yieldNumber(as, n);
 		throw new UnsupportedOperationException("JSON value not supported: "+ value);
@@ -231,7 +231,7 @@ public final class JsonStream implements InvocationHandler {
 		if (as == float.class || as == Float.class) return n.floatValue();
 		if (as == double.class || as == Double.class) return n.doubleValue();
 		if (as.isInstance(n)) return n;
-		return getMapper(as).mapNumber().apply(n);
+		return jsonTo(as).mapNumber().apply(n);
 	}
 
 	private Object yieldContinuation(Member member, Object[] args) {
@@ -251,7 +251,7 @@ public final class JsonStream implements InvocationHandler {
 		};
 	}
 
-	private void readMembersToContinuation(JsonFrame frame) {
+	private void readMembersToContinuation(JsonFrame<?> frame) {
 		if (frame.encounteredContinuation != null || frame.isClosed)
 			return;
 		int cp = ',';
@@ -284,7 +284,7 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	private void objectViaConsumer(Member member, Object[] args) {
-		JsonFrame frame = pushFrame(member);
+		JsonFrame<?> frame = pushFrame(member);
 		@SuppressWarnings("unchecked")
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
@@ -296,14 +296,14 @@ public final class JsonStream implements InvocationHandler {
 			in.readCharSkipWhitespaceAndExpect(':');
 			frame.nextInStream();
 			frame.setDirectValue(JsonMember.OBJECT_KEY, key);
-			consumer.accept(newProxy(member.streamType(), this));
+			consumer.accept(frame.proxy);
 			cp = in.readCharSkipWhitespace();
 		}
 		popFrame(member);
 	}
 
 	private void arrayViaConsumer(Member member, Object[] args) {
-		JsonFrame frame = pushFrame(member);
+		JsonFrame<?> frame = pushFrame(member);
 		@SuppressWarnings("unchecked")
 		Consumer<Object> consumer = (Consumer<Object>) args[0];
 		int cp = ',';
@@ -312,7 +312,7 @@ public final class JsonStream implements InvocationHandler {
 			in.readCharSkipWhitespaceAndExpect('{');
 			frame.nextInStream();
 			frame.isOpened = true;
-			consumer.accept(newProxy(member.streamType(), this));
+			consumer.accept(frame.proxy);
 			cp = in.readCharSkipWhitespace();
 		}
 		popFrame(member);
@@ -345,7 +345,7 @@ public final class JsonStream implements InvocationHandler {
 				String key = in.readString(); // includes closing "
 				in.readCharSkipWhitespaceAndExpect(':');
 				frame.setDirectValue(JsonMember.OBJECT_KEY, key);
-				return newProxy(member.streamType(), JsonStream.this);
+				return frame.proxy;
 			}
 		};
 		return member.isStream() ? toStream(iter) : iter;
@@ -353,6 +353,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private Object arrayAsStream(Member member) {
 		JsonFrame frame = pushFrame(member);
+		Object proxy = newProxy(member.streamType(), JsonStream.this);
 		Iterator<?> iter = new Iterator<>() {
 			@Override
 			public boolean hasNext() {
@@ -375,30 +376,30 @@ public final class JsonStream implements InvocationHandler {
 			public Object next() {
 				if (frame.itemNo < 0) throw new NoSuchElementException("" + (-frame.itemNo + 1));
 				frame.isOpened = true; // { already read by hasNext
-				return newProxy(member.streamType(), JsonStream.this);
+				return proxy;
 			}
 		};
 		return member.isStream() ? toStream(iter) : iter;
 	}
 
-	private JsonFrame currentFrame() {
+	private JsonFrame<?> currentFrame() {
 		return stack.peekFirst();
 	}
 
 	private void popFrame(Member member) {
 		stack.removeFirst();
-		JsonFrame frame = currentFrame();
+		JsonFrame<?> frame = currentFrame();
 		if (frame != null)
 			frame.markAsConsumed(member.name());
 	}
 
-	private JsonFrame pushFrame(Member member) {
+	private JsonFrame<?> pushFrame(Member member) {
 		return pushFrame(member.streamType());
 	}
 
-	private JsonFrame pushFrame(Class<?> type) {
+	private <T> JsonFrame<T> pushFrame(Class<T> type) {
 		initStreamType(type);
-		JsonFrame frame = new JsonFrame(type);
+		JsonFrame frame = new JsonFrame(type, newProxy(type, this));
 		stack.addFirst(frame);
 		return frame;
 	}
@@ -415,8 +416,9 @@ public final class JsonStream implements InvocationHandler {
 	/**
 	 * Holds the information and parse state for JSON input for a single JSON object level.
 	 */
-	private static class JsonFrame {
-		final Class<?> type;
+	private static class JsonFrame<T> {
+		final Class<T> type;
+		final T proxy;
 		/**
 		 * The values of members read so far, for continuation a null value is put once the continuation was used once.
 		 */
@@ -430,8 +432,9 @@ public final class JsonStream implements InvocationHandler {
 		 */
 		String encounteredContinuation;
 
-		private JsonFrame(Class<?> type) {
+		private JsonFrame(Class<T> type, T proxy) {
 			this.type = type;
+			this.proxy = proxy;
 		}
 
 		void setDirectValue(String member, Serializable value) {
