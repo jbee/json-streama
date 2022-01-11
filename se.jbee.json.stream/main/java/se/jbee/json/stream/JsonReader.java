@@ -14,7 +14,7 @@ import static java.util.stream.Collectors.joining;
 
 record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 
-	int readAutodetect(Consumer<Serializable> setter) {
+	int readNodeAutodetect(Consumer<Serializable> setter) {
 		int cp = readCharSkipWhitespace();
 		switch (cp) {
 			case '{':
@@ -44,6 +44,13 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 				throw formatException(cp, '{', '[', '"', 'n', 't', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-');
 		}
 		return readCharSkipWhitespace();
+	}
+
+	/**
+	 * @return the code point after the node that is skipped, most likely a comma or closing array or object.
+	 */
+	int skipNodeAutodetect() {
+		return -1; //TODO
 	}
 
 	private static boolean isDigit(int cp) {
@@ -87,14 +94,34 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 		return cp;
 	}
 
+	/**
+	 * Assumes the opening [ is already consumed.
+	 *
+	 * After the parsing the closing ] is the last consumed character.
+	 *
+	 * @return list of directly converted values
+	 */
 	private ArrayList<Serializable> readArray() {
-		//TODO
-		return new ArrayList<>();
+		ArrayList<Serializable> res = new ArrayList<>();
+		int cp = ',';
+		while (cp != ']') {
+			if (cp != ',') throw formatException(cp, ',', ']');
+			cp = readNodeAutodetect(res::add);
+		}
+		return res;
 	}
 
 	private LinkedHashMap<String, Serializable> readMap() {
-		//TODO
-		return new LinkedHashMap<>();
+		LinkedHashMap<String, Serializable> res = new LinkedHashMap<>();
+		int cp = ',';
+		while (cp != '}') {
+			if (cp != ',') throw formatException(cp, ',', '}');
+			readCharSkipWhitespaceAndExpect('"');
+			String key = readString();
+			readCharSkipWhitespaceAndExpect(':');
+			cp = readNodeAutodetect(value -> res.put(key, value));
+		}
+		return res;
 	}
 
 	String readString() {

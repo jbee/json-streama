@@ -14,6 +14,8 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TestJsonStream {
@@ -146,6 +148,34 @@ class TestJsonStream {
 		List<String> actual = new ArrayList<>();
 		list.tracks(track -> actual.add(track.no()+". "+track.name() +" "+("*".repeat(track.stars()))));
 		assertEquals(List.of("1. I Never Talk to Strangers ****", "2. Cold cold Ground *****"), actual);
+	}
+
+	@Test
+	void proxyToStringShowsParseProgress() {
+		Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
+		assertEquals("""
+    		<stream position>""", list.toString());
+
+		assertNotNull(list.name());
+
+		assertEquals("""
+				{
+					"name": Tom Waits Special,
+					"author": me,
+				<tracks?><stream position>""", list.toString());
+	}
+
+	@Test
+	void proxyHashCodeIsAlwaysSame() {
+		Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
+		assertEquals(-1, list.hashCode());
+	}
+
+	@Test
+	void proxyEqualsIsAlwaysFalse() {
+		Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
+		assertNotEquals(list, list);
+		assertNotEquals(list, list.tracks().findAny().orElse(null));
 	}
 
 	private static IntSupplier asJsonInput(String json) {

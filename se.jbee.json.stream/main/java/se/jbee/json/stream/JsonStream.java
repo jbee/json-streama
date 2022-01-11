@@ -42,6 +42,9 @@ import static java.util.Spliterators.spliteratorUnknownSize;
  * <p>
  * (c) 2022
  *
+ * The implementation is light on memory allocation and pays with computation.
+ * Each access has to do 2-3 small map look-ups and check several processing state primitives.
+ *
  * The nesting of JSON input document is processed java stack independent, a stack overflow will not occur.
  *
  * @author Jan Bernitt
@@ -166,6 +169,8 @@ public final class JsonStream implements InvocationHandler {
 						str.append(" [...],\n");
 				}
 			}
+			if (f.encounteredContinuation != null)
+				str.append("<"+f.encounteredContinuation+"?>");
 			if (f.isClosed)
 				str.append(indent).append("}\n");
 			indent+="\t";
@@ -181,15 +186,19 @@ public final class JsonStream implements InvocationHandler {
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args) {
-		if ("toString".equals(method.getName()))
-			return toString();
+		if (method.getDeclaringClass() == Object.class) {
+			return switch (method.getName()) {
+				case "toString" -> toString();
+				case "hashCode" -> -1;
+				case "equals" -> false;
+				default -> null;
+			};
+		}
+
 		JsonFrame<?> frame = currentFrame();
-		if (!frame.type.isInstance(proxy))
+		if (frame.proxy != proxy)
 			throw new IllegalStateException("Parent proxy called out of order\nat: "+toString());
 		readMembersToContinuation(frame);
-		if (method.getReturnType().isRecord()) {
-			//TODO
-		}
 		return yieldValue(frame, MEMBERS_BY_METHOD.get(method), args);
 	}
 
@@ -271,14 +280,17 @@ public final class JsonStream implements InvocationHandler {
 			in.readCharSkipWhitespaceAndExpect(':');
 			Member member = frameMembers.get(name);
 			if (member == null) {
-				//TODO skip value
+				// input has a member that is not mapped to java, we ignore it
+				cp = in.skipNodeAutodetect();
+				frame.encounteredContinuation = null;
+				continue;
 			} else if (member.isContinuation()) {
 				frame.encounteredContinuation = name;
 				frame.isContinued = true;
 				return;
 			}
 			frame.encounteredContinuation = null;
-			cp = in.readAutodetect(val -> frame.setDirectValue(name, val));
+			cp = in.readNodeAutodetect(val -> frame.setDirectValue(name, val));
 		}
 		frame.isClosed = true;
 	}
@@ -319,7 +331,7 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	private Object objectAsStream(Member member) {
-		JsonFrame frame = pushFrame(member);
+		JsonFrame<?> frame = pushFrame(member);
 		Iterator<?> iter = new Iterator<>() {
 			@Override
 			public boolean hasNext() {
@@ -352,8 +364,7 @@ public final class JsonStream implements InvocationHandler {
 	}
 
 	private Object arrayAsStream(Member member) {
-		JsonFrame frame = pushFrame(member);
-		Object proxy = newProxy(member.streamType(), JsonStream.this);
+		JsonFrame<?> frame = pushFrame(member);
 		Iterator<?> iter = new Iterator<>() {
 			@Override
 			public boolean hasNext() {
@@ -376,7 +387,7 @@ public final class JsonStream implements InvocationHandler {
 			public Object next() {
 				if (frame.itemNo < 0) throw new NoSuchElementException("" + (-frame.itemNo + 1));
 				frame.isOpened = true; // { already read by hasNext
-				return proxy;
+				return frame.proxy;
 			}
 		};
 		return member.isStream() ? toStream(iter) : iter;
@@ -399,7 +410,7 @@ public final class JsonStream implements InvocationHandler {
 
 	private <T> JsonFrame<T> pushFrame(Class<T> type) {
 		initStreamType(type);
-		JsonFrame frame = new JsonFrame(type, newProxy(type, this));
+		JsonFrame<T> frame = new JsonFrame<>(type, newProxy(type, this));
 		stack.addFirst(frame);
 		return frame;
 	}
