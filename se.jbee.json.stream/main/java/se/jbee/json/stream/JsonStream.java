@@ -378,8 +378,8 @@ public final class JsonStream implements InvocationHandler {
         new Iterator<>() {
           @Override
           public boolean hasNext() {
-            int cp =
-                in.readCharSkipWhitespace(); // reads either { (item) or ] (end of continuation)
+            // reads either { (item) or ] (end of continuation)
+            int cp = in.readCharSkipWhitespace();
             if (cp == ']') {
               frame.itemNo = -(frame.itemNo + 1);
               popFrame(member);
