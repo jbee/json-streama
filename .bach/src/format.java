@@ -1,9 +1,9 @@
 class format {
-    public static void main(String... args) {
-      try (var bach = new com.github.sormuras.bach.Bach(args)) {
-        var files = bach.explorer().findJavaFiles();
-        bach.logCaption("Format %d .java files".formatted(files.size()));
-        bach.run("format@1.13.0", format -> format.add("--replace").addAll(files));
-      }
+  public static void main(String... args) {
+    try (var bach = new com.github.sormuras.bach.Bach(args)) {
+      var files = bach.explorer().findJavaFiles();
+      bach.logCaption("Format %d .java files".formatted(files.size()));
+      bach.run("format@1.13.0", format -> format.add("--replace").addAll(files));
     }
   }
+}
