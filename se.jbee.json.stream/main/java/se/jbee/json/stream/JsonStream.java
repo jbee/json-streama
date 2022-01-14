@@ -10,6 +10,8 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -193,8 +195,19 @@ public final class JsonStream implements InvocationHandler {
   }
 
   @Override
-  public Object invoke(Object proxy, Method method, Object[] args) {
-    if (method.getDeclaringClass() == Object.class) {
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    Class<?> declaringClass = method.getDeclaringClass();
+    if (method.isDefault()) {
+      return MethodHandles.lookup()
+          .findSpecial(
+              declaringClass,
+              method.getName(),
+              MethodType.methodType(method.getReturnType(), method.getParameterTypes()),
+              declaringClass)
+          .bindTo(proxy)
+          .invokeWithArguments(args);
+    }
+    if (declaringClass == Object.class) {
       return switch (method.getName()) {
         case "toString" -> toString();
         case "hashCode" -> -1;
@@ -431,8 +444,7 @@ public final class JsonStream implements InvocationHandler {
 
   @SuppressWarnings("unchecked")
   private static <A> A newProxy(Class<A> type, JsonStream handler) {
-    ClassLoader cl = Thread.currentThread().getContextClassLoader();
-    return (A) Proxy.newProxyInstance(cl, new Class[] {type}, handler);
+    return (A) Proxy.newProxyInstance(type.getClassLoader(), new Class[] {type}, handler);
   }
 
   /** Holds the information and parse state for JSON input for a single JSON object level. */

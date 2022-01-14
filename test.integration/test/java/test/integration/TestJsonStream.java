@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonFormatException;
 import se.jbee.json.stream.JsonStream;
@@ -54,6 +55,10 @@ class TestJsonStream {
 
     String name();
 
+    default String title() {
+      return name();
+    }
+
     String artist();
 
     Genre genre();
@@ -62,7 +67,7 @@ class TestJsonStream {
   }
 
   private static final String PLAYLIST_JSON = // language=JSON
-    """
+      """
     {
       "name": "Tom Waits Special",
       "author": "me",
@@ -150,7 +155,7 @@ class TestJsonStream {
   @Test
   void streamRoot() {
     String json = // language=JSON
-    """
+        """
     [
 				{"no":1, "name": "Earth Died Screaming"},
 				{"no":2, "name": "Dirt in the Ground"}
@@ -175,6 +180,25 @@ class TestJsonStream {
   }
 
   @Test
+  @Disabled("default methods do not work yet")
+  void proxyDefaultMethodsCanBeUsed() {
+    String json = // language=JSON
+        """
+    {
+      "name": "Bone Machine",
+      "artist": "Tom Waits",
+      "genre": "Jazz",
+      "tracks": {
+        "1": { "name": "Earth Died Screaming"},
+        "2": { "name": "Dirt in the Ground"}
+      }
+    }
+    """;
+    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
+    assertEquals("Bone Machine", album.title());
+  }
+
+  @Test
   void proxyToStringShowsParseProgress() {
     Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
     assertEquals("""
@@ -183,7 +207,7 @@ class TestJsonStream {
     assertNotNull(list.name());
 
     assertEquals(
-"""
+        """
     {
     	"name": Tom Waits Special,
     	"author": me,

@@ -1,2 +1,3 @@
-# json-ssp
-Java JSON structured stream processor library
+# json-streama
+
+Java JSON stream processor library.
