@@ -2,80 +2,25 @@ package test.integration;
 
 import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static test.integration.Model.PLAYLIST_JSON;
+import static test.integration.Utils.asJsonInput;
 
-import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonFormatException;
 import se.jbee.json.stream.JsonStream;
+import test.integration.Model.Album;
+import test.integration.Model.Genre;
+import test.integration.Model.Playlist;
+import test.integration.Model.Track;
 
 class TestJsonStream {
-
-  public enum Genre {
-    Jazz,
-    Pop
-  }
-
-  public interface Playlist {
-    String name();
-
-    String author();
-
-    Stream<Track> tracks();
-
-    void tracks(Consumer<Track> consumer);
-  }
-
-  public interface Track {
-
-    int no();
-
-    String name();
-
-    String artist();
-
-    long duration();
-
-    int stars();
-
-    float averageStars();
-  }
-
-  public interface Album {
-
-    String name();
-
-    default String title() {
-      return name();
-    }
-
-    String artist();
-
-    Genre genre();
-
-    Iterator<Track> tracks();
-  }
-
-  private static final String PLAYLIST_JSON = // language=JSON
-      """
-    {
-      "name": "Tom Waits Special",
-      "author": "me",
-      "tracks": [
-        { "no": 1, "name": "I Never Talk to Strangers", "stars":4 , "averageStars": 3.9 },
-        { "no": 2, "name": "Cold cold Ground", "stars":5, "averageStars": 4.7 }
-      ]
-    }""";
 
   @Test
   void objectRoot() {
@@ -196,39 +141,5 @@ class TestJsonStream {
     """;
     Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
     assertEquals("Bone Machine", album.title());
-  }
-
-  @Test
-  void proxyToStringShowsParseProgress() {
-    Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
-    assertEquals("""
-    		<stream position>""", list.toString());
-
-    assertNotNull(list.name());
-
-    assertEquals(
-        """
-    {
-    	"name": Tom Waits Special,
-    	"author": me,
-    <tracks?><stream position>""",
-        list.toString());
-  }
-
-  @Test
-  void proxyHashCodeIsAlwaysSame() {
-    Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
-    assertEquals(-1, list.hashCode());
-  }
-
-  @Test
-  void proxyEqualsIsAlwaysFalse() {
-    Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
-    assertNotEquals(list, list);
-    assertNotEquals(list, list.tracks().findAny().orElse(null));
-  }
-
-  private static IntSupplier asJsonInput(String json) {
-    return JsonStream.from(new StringReader(json.replace('\'', '"')));
   }
 }
