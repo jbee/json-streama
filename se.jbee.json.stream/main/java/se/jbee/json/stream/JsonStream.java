@@ -302,7 +302,7 @@ public final class JsonStream implements InvocationHandler {
       Member member = frameMembers.get(name);
       if (member == null) {
         // input has a member that is not mapped to java, we ignore it
-        cp = in.skipNodeAutodetect();
+        cp = in.skipNodeDetect();
         frame.encounteredContinuation = null;
         continue;
       } else if (member.isContinuation()) {
@@ -311,7 +311,7 @@ public final class JsonStream implements InvocationHandler {
         return;
       }
       frame.encounteredContinuation = null;
-      cp = in.readNodeAutodetect(val -> frame.setDirectValue(name, val));
+      cp = in.readNodeDetect(val -> frame.setDirectValue(name, val));
     }
     frame.isClosed = true;
   }

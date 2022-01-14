@@ -1,6 +1,5 @@
 package se.jbee.json.stream;
 
-import static java.lang.Character.isWhitespace;
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 import static java.util.stream.Collectors.joining;
@@ -14,7 +13,27 @@ import java.util.function.Supplier;
 
 record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 
-  int readNodeAutodetect(Consumer<Serializable> setter) {
+  private static final char[] NODE_STARTING_CHARS = {
+    '{', // object
+    '[', // array
+    '"', // string
+    'n', // null
+    't',
+    'f', // boolean
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '-' // number
+  };
+
+  int readNodeDetect(Consumer<Serializable> setter) {
     int cp = readCharSkipWhitespace();
     switch (cp) {
       case '{':
@@ -24,15 +43,15 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
         setter.accept(readArray());
         break;
       case 't':
-        readSkip(3);
+        skipCodePoints(3);
         setter.accept(true);
         break;
       case 'f':
-        readSkip(4);
+        skipCodePoints(4);
         setter.accept(false);
         break;
       case 'n':
-        readSkip(3);
+        skipCodePoints(3);
         setter.accept(null);
         break;
       case '"':
@@ -41,40 +60,53 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
         return readNumber(cp, setter);
       default:
-        throw formatException(
-            cp, '{', '[', '"', 'n', 't', 'f', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '-');
+        throw formatException(cp, NODE_STARTING_CHARS);
     }
     return readCharSkipWhitespace();
   }
 
   /**
    * @return the code point after the node that is skipped, most likely a comma or closing array or
-   *     object.
+   *     object or end of the stream
    */
-  int skipNodeAutodetect() {
-    return -1; // TODO
+  int skipNodeDetect() {
+    int cp = readCharSkipWhitespace();
+    return switch (cp) {
+      case '{' -> skipObject();
+      case '[' -> skipArray();
+      case ']' -> cp; // empty array, this cp needs to be recognised by the caller
+      case '"' -> skipString();
+      case 't', 'f' -> skipBoolean();
+      case 'n' -> skipNull();
+      case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-' -> skipNumber();
+      default -> throw formatException(cp, NODE_STARTING_CHARS);
+    };
   }
 
   private static boolean isDigit(int cp) {
     return cp >= '0' && cp <= '9';
   }
 
+  /** In JSON whitespace is defined as the below 4 ASCII characters so this is what we accept */
+  private static boolean isWhitespace(int cp) {
+    return cp == ' ' || cp == '\t' || cp == '\r' || cp == '\n';
+  }
+
   private int readNumber(int cp0, Consumer<Serializable> setter) {
     StringBuilder n = new StringBuilder();
     n.append((char) cp0);
-    int cp = read.getAsInt();
+    int cp = nextCodePoint();
     cp = readDigits(n, cp);
     if (cp == '.') {
       n.append('.');
-      cp = readDigits(n, read.getAsInt());
+      cp = readDigits(n, nextCodePoint());
     }
     if (cp == 'e' || cp == 'E') {
       n.append('e');
-      cp = read.getAsInt();
+      cp = nextCodePoint();
       if (cp == '+' || cp == '-') {
         n.append((char) cp);
-        cp = read.getAsInt();
+        cp = nextCodePoint();
       }
       cp = readDigits(n, cp);
     }
@@ -92,7 +124,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     int cp = cp0;
     while (isDigit(cp)) {
       n.append((char) cp);
-      cp = read.getAsInt();
+      cp = nextCodePoint();
     }
     return cp;
   }
@@ -109,7 +141,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     int cp = ',';
     while (cp != ']') {
       if (cp != ',') throw formatException(cp, ',', ']');
-      cp = readNodeAutodetect(res::add);
+      cp = readNodeDetect(res::add);
     }
     return res;
   }
@@ -122,25 +154,25 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       readCharSkipWhitespaceAndExpect('"');
       String key = readString();
       readCharSkipWhitespaceAndExpect(':');
-      cp = readNodeAutodetect(value -> res.put(key, value));
+      cp = readNodeDetect(value -> res.put(key, value));
     }
     return res;
   }
 
   String readString() {
     StringBuilder str = new StringBuilder();
-    int cp = read.getAsInt();
+    int cp = nextCodePoint();
     while (cp != -1) {
       if (cp == '"') {
         // found the end (if escaped we would have hopped over)
         return str.toString();
       }
       if (cp == '\\') {
-        cp = read.getAsInt();
+        cp = nextCodePoint();
         switch (cp) {
           case 'u' -> // unicode uXXXX
           {
-            int[] code = {read.getAsInt(), read.getAsInt(), read.getAsInt(), read.getAsInt()};
+            int[] code = {nextCodePoint(), nextCodePoint(), nextCodePoint(), nextCodePoint()};
             str.append(toChars(parseInt(new String(code, 0, 4), 16)));
           }
           case '\\' -> str.append('\\');
@@ -156,13 +188,13 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       } else {
         str.appendCodePoint(cp);
       }
-      cp = read.getAsInt();
+      cp = nextCodePoint();
     }
     throw formatException(-1, '"');
   }
 
-  private void readSkip(int n) {
-    for (int i = 0; i < n; i++) if (read.getAsInt() == -1) throw formatException(-1);
+  private int nextCodePoint() {
+    return read.getAsInt();
   }
 
   void readCharSkipWhitespaceAndExpect(char expected) {
@@ -170,14 +202,86 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
   }
 
   int readCharSkipWhitespace() {
-    int c = read.getAsInt();
-    while (c != -1 && Character.isWhitespace(c)) c = read.getAsInt();
-    if (c == -1) throw formatException(-1);
-    return c;
+    int cp = nextCodePoint();
+    while (cp != -1 && isWhitespace(cp)) cp = nextCodePoint();
+    if (cp == -1) throw formatException(-1);
+    return cp;
   }
 
   private void expect(char expected, int cp) {
     if (cp != expected) throw formatException(cp, expected);
+  }
+
+  private void skipCodePoints(int n) {
+    for (int i = 0; i < n; i++) if (nextCodePoint() == -1) throw formatException(-1);
+  }
+
+  private int skipNumber() {
+    // first digit or - has been consumed
+    int cp = skipDigits();
+    if (cp == '.') cp = skipDigits();
+    if (cp == 'e' || cp == 'E') {
+      nextCodePoint(); // +/-/digit
+      cp = skipDigits();
+    }
+    return cp;
+  }
+
+  private int skipDigits() {
+    int cp = nextCodePoint();
+    while (isDigit(cp)) cp = nextCodePoint();
+    return cp;
+  }
+
+  private int skipNull() {
+    // n has been consumed
+    skipCodePoints(3);
+    return readCharSkipWhitespace();
+  }
+
+  private int skipBoolean() {
+    // t/f has been consumed
+    skipCodePoints(nextCodePoint() == 'r' ? 2 : 3);
+    return readCharSkipWhitespace();
+  }
+
+  private int skipString() {
+    // " has been consumed
+    int cp = nextCodePoint();
+    while (cp != '"') {
+      if (cp == '\\') {
+        cp = nextCodePoint();
+        // hop over escaped char or unicode
+        if (cp == 'u') skipCodePoints(4);
+      }
+      cp = nextCodePoint();
+    }
+    return readCharSkipWhitespace();
+  }
+
+  private int skipArray() {
+    // [ has been consumed
+    int cp = ',';
+    while (cp != ']') {
+      if (cp != ',') throw formatException(cp, ',', ']');
+      cp = skipNodeDetect();
+    }
+    return readCharSkipWhitespace();
+  }
+
+  private int skipObject() {
+    // { has been consumed
+    int cp = ',';
+    while (cp != '}') {
+      if (cp != ',') throw formatException(cp, ',', '}');
+      cp = readCharSkipWhitespace();
+      if (cp == '"') {
+        cp = skipString();
+        if (cp != ':') throw formatException(cp, ':');
+        cp = skipNodeDetect();
+      } else if (cp != '}') throw formatException(cp, '"', '}');
+    }
+    return readCharSkipWhitespace();
   }
 
   JsonFormatException formatException(int found, char... expected) {
