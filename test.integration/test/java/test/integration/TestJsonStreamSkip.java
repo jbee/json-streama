@@ -25,8 +25,7 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
-    assertEquals("Tom Waits", album.artist());
+    assertSkippingToArtist(json);
   }
 
   @Test
@@ -41,8 +40,7 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
-    assertEquals("Tom Waits", album.artist());
+    assertSkippingToArtist(json);
   }
 
   @Test
@@ -56,8 +54,7 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
-    assertEquals("Tom Waits", album.artist());
+    assertSkippingToArtist(json);
   }
 
   @Test
@@ -75,8 +72,7 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
-    assertEquals("Tom Waits", album.artist());
+    assertSkippingToArtist(json);
   }
 
   @Test
@@ -94,8 +90,7 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
-    assertEquals("Tom Waits", album.artist());
+    assertSkippingToArtist(json);
   }
 
   @Test
@@ -112,7 +107,12 @@ class TestJsonStreamSkip {
       "genre": "Jazz"
     }
     """;
+    assertSkippingToArtist(json);
+  }
+
+  private static void assertSkippingToArtist(String json) {
     Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
     assertEquals("Tom Waits", album.artist());
+    assertEquals("Bone Machine", album.name());
   }
 }
