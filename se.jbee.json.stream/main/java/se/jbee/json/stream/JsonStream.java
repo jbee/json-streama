@@ -227,8 +227,7 @@ public final class JsonStream implements InvocationHandler {
     String name = member.name();
     if (member.isContinuation()) {
       if (!name.equals(frame.encounteredContinuation)) {
-        if (frame.hasValue(name))
-          throw new IllegalStateException("A continuation member can only be used once");
+        checkNotAlreadyProcessed(frame, name);
         // assume the input does not contain the requested member so its value is empty
         frame.markAsConsumed(name);
         return member.isStream() ? Stream.empty() : emptyIterator();
@@ -239,6 +238,11 @@ public final class JsonStream implements InvocationHandler {
       return yieldContinuation(member, args);
     }
     return yieldDirect(member, frame.directValue(name), args);
+  }
+
+  private void checkNotAlreadyProcessed(JsonFrame<?> frame, String name) {
+    if (frame.hasValue(name))
+      throw new IllegalStateException("Continuation `" + name + "` was already accessed before.");
   }
 
   private Object yieldDirect(Member member, Object value, Object[] args) {
@@ -290,7 +294,7 @@ public final class JsonStream implements InvocationHandler {
       in.readCharSkipWhitespaceAndExpect('{');
       frame.isOpened = true;
     } else if (frame.isContinued) {
-      cp = in.readCharSkipWhitespace();
+      cp = in.readCharSkipWhitespace(); // should be , or }
       frame.isContinued = false;
     }
     Map<String, Member> frameMembers = MEMBERS_BY_TYPE.get(frame.type);
@@ -306,6 +310,7 @@ public final class JsonStream implements InvocationHandler {
         frame.encounteredContinuation = null;
         continue;
       } else if (member.isContinuation()) {
+        checkNotAlreadyProcessed(frame, name);
         frame.encounteredContinuation = name;
         frame.isContinued = true;
         return;

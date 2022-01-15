@@ -12,6 +12,15 @@ interface Model {
     Pop
   }
 
+  interface Discography {
+
+    String artist();
+
+    Stream<Album> albums();
+
+    void singles(Consumer<Single> eachSingle);
+  }
+
   interface Playlist {
     String name();
 
@@ -19,7 +28,7 @@ interface Model {
 
     Stream<Track> tracks();
 
-    void tracks(Consumer<Track> consumer);
+    void tracks(Consumer<Track> eachTrack);
   }
 
   interface Track {
@@ -35,6 +44,12 @@ interface Model {
     int stars();
 
     float averageStars();
+  }
+
+  interface Single {
+    String name();
+
+    Stream<Track> tracks();
   }
 
   interface Album {
