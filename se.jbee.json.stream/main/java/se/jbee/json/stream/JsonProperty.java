@@ -7,26 +7,22 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface JsonMember {
+public @interface JsonProperty {
 
   /*
   Mapping
    */
 
   /**
-   * The key used internally when an JSON input object is treated as if it was a sequence of objects
-   * which had a special member called "(key)".
-   *
-   * <p>This means to access this using a java method annotate the method with {@link JsonMember}
-   * with either the {@link #name()} set to this constant or with {@link #key()} set true.
+   * The key used internally when an JSON input "map" object is treated as if it was a sequence of
+   * objects which had a special member called "(key)". This is accessed by annotating with {@link
+   * #key()} of {@code true}.
    */
   String OBJECT_KEY = "(key)";
 
   String name() default "";
 
   boolean key() default false;
-
-  boolean value() default false;
 
   /*
   Validation
@@ -36,5 +32,5 @@ public @interface JsonMember {
 
   int minOccur() default 0;
 
-  int maxOccur() default 1;
+  int maxOccur() default Integer.MAX_VALUE;
 }

@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static test.integration.Model.PLAYLIST_JSON;
 import static test.integration.Utils.asJsonInput;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonStream;
+import test.integration.Model.Discography;
 import test.integration.Model.Playlist;
 
 /**
@@ -29,6 +31,40 @@ class TestJsonStreamObjectMethods {
     	"author": me,
     <tracks?><stream position>""",
         list.toString());
+  }
+
+  @Test
+  void toStringShowsItemCountOfAlreadyProcessedContinuations() {
+    String json = // language=JSON
+        """
+    {
+      "artist": "Tom Waits",
+      "singles": [{
+        "name": "Downtown Train"
+      }],
+      "albums": [{
+        "name": "Rain Dogs"
+      }]
+    }""";
+
+    Discography discography = JsonStream.ofRoot(Discography.class, asJsonInput(json));
+    assertEquals("Tom Waits", discography.artist());
+    AtomicInteger singles = new AtomicInteger();
+    discography.singles(
+        single -> {
+          single.name(); // need to actually consume a single
+          singles.incrementAndGet();
+        });
+    assertEquals(1, singles.get());
+    assertNotNull(discography.albums(), "need to access album to forwards stream beyond singles");
+    assertEquals(
+        """
+    {
+    	"artist": Tom Waits,
+    	"singles [<1>],
+    	"albums": [... <-1>
+    	<stream position>""",
+        discography.toString());
   }
 
   @Test

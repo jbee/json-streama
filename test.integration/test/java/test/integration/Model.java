@@ -1,8 +1,8 @@
 package test.integration;
 
-import java.util.Iterator;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import se.jbee.json.stream.JsonProperty;
 
 /** Defines a target the test use to map JSON input to. */
 interface Model {
@@ -33,6 +33,7 @@ interface Model {
 
   interface Track {
 
+    @JsonProperty(key = true)
     int no();
 
     String name();
@@ -64,7 +65,7 @@ interface Model {
 
     Genre genre();
 
-    Iterator<Track> tracks();
+    Stream<Track> tracks();
   }
 
   String PLAYLIST_JSON = // language=JSON

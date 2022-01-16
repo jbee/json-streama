@@ -2,6 +2,7 @@ package se.jbee.json.stream;
 
 import java.lang.reflect.Constructor;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import se.jbee.json.stream.JsonMapping.JsonTo;
@@ -13,6 +14,24 @@ final class AutoJsonMapper {
   }
 
   private static final Map<Class<?>, JsonTo<?>> MAPPER_BY_TO_TYPE = new ConcurrentHashMap<>();
+
+  public static <T> void register(JsonTo<T> by) {
+    MAPPER_BY_TO_TYPE.put(by.to(), by);
+  }
+
+  static {
+    // TODO make this a default method "with" which normally wraps this on but on  a map it just
+    // adds
+    register(new JsonTo<>(String.class, Function.identity(), Objects::toString, Objects::toString));
+    register(new JsonTo<>(Integer.class, Integer::valueOf, Number::intValue, b -> b ? 1 : 0));
+    register(new JsonTo<>(Long.class, Long::valueOf, Number::longValue, b -> b ? 1L : 0L));
+    register(new JsonTo<>(Float.class, Float::valueOf, Number::floatValue, b -> b ? 1f : 0f));
+    register(new JsonTo<>(Double.class, Double::valueOf, Number::doubleValue, b -> b ? 1d : 0d));
+    register(new JsonTo<>(int.class, Integer::valueOf, Number::intValue, b -> b ? 1 : 0));
+    register(new JsonTo<>(long.class, Long::valueOf, Number::longValue, b -> b ? 1L : 0L));
+    register(new JsonTo<>(float.class, Float::valueOf, Number::floatValue, b -> b ? 1f : 0f));
+    register(new JsonTo<>(double.class, Double::valueOf, Number::doubleValue, b -> b ? 1d : 0d));
+  }
 
   static final JsonMapping SHARED = AutoJsonMapper::createMapperCached;
 

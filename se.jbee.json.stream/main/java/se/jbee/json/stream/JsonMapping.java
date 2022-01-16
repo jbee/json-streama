@@ -12,9 +12,19 @@ public interface JsonMapping {
     return json -> {
       throw new UnsupportedOperationException(
           String.format(
-              "Unknown conversion from %s (%s) to %s",
+              "Unknown conversion from value `%s` (%s) to %s",
               json, from.getSimpleName(), to.getSimpleName()));
     };
+  }
+
+  static Number toNumber(String value) {
+    double number = Double.parseDouble(value);
+    if (number % 1 == 0d) {
+      long asLong = (long) number;
+      if (asLong < Integer.MAX_VALUE && asLong > Integer.MIN_VALUE) {
+        return (int) asLong;
+      } else return asLong;
+    } else return number;
   }
 
   <T> JsonTo<T> mapTo(Class<T> to);

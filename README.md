@@ -1,3 +1,5 @@
 # json-streama
 
-Java JSON stream processor library.
+A JSON stream processor library for Java.
+
+_"Codes like mapping - with performance characteristics of streaming."_

@@ -2,7 +2,7 @@ package se.jbee.json.stream;
 
 import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
-import static java.util.stream.Collectors.joining;
+import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -11,6 +11,30 @@ import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+/**
+ * A code point based JSON input reader.
+ *
+ * <p>Characters are supplied by the {@link IntSupplier}. As usual the end of input is marked by
+ * returning {@code -1}.
+ *
+ * <p>The reader supports mapping JSON to {@link String}, {@link Number} or {@link Boolean} as well
+ * as {@link java.util.List}s or {@link java.util.Map}s.
+ *
+ * <p>In addition, input can also be skipped, that means consumed without mapping it to anything.
+ *
+ * <p>Since the reader has no means to access input characters other than pulling the next code
+ * point from the stream it is no surprise that it is implemented without any form of lookahead or
+ * use of mark/reset. In rare circumstances this means a code point has to be recognised at two
+ * places (methods). In such cases the code point is passed on.
+ *
+ * <p>This also means methods might expect that the first character of the node they read has
+ * already been consumed to identify which node returnType it is. Similarly, some methods might
+ * return the character after the node as this is the only way for them to detect the end of the
+ * node. The caller then has to continue type with the returned code point.
+ *
+ * @author Jan Bernitt
+ * @since 1.0
+ */
 record JsonReader(IntSupplier read, Supplier<String> printPosition) {
 
   private static final char[] NODE_STARTING_CHARS = {
@@ -18,21 +42,37 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     '[', // array
     '"', // string
     'n', // null
-    't',
-    'f', // boolean
-    '0',
-    '1',
-    '2',
-    '3',
-    '4',
-    '5',
-    '6',
-    '7',
-    '8',
-    '9',
-    '-' // number
+    't', 'f', // boolean
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'
   };
 
+  /*
+  API
+   */
+
+  /**
+   * A node value is:
+   *
+   * <dl>
+   *   <dt>JSON null node
+   *   <dd>{@code null} reference
+   *   <dt>JSON string node
+   *   <dd>{@link String}
+   *   <dt>JSON number node
+   *   <dd>A suitable subtype of {@link Number}; {@link Integer}, {@link Long} or {@link Double}
+   *   <dt>JSON boolean node
+   *   <dd>{@link Boolean}
+   *   <dt>JSON array node
+   *   <dd>{@link ArrayList} of any of the other returned types based on what the list elements were
+   *   <dt>JSON object node
+   *   <dd>{@link LinkedHashMap} of any of the other returned types based on what the object member
+   *       values were
+   * </dl>
+   *
+   * @param setter consumes the parsed node value
+   * @return the next non whitespace code point in the stream after the value read. A caller needs
+   *     to consider this to correctly continue processing the stream.
+   */
   int readNodeDetect(Consumer<Serializable> setter) {
     int cp = readCharSkipWhitespace();
     switch (cp) {
@@ -83,82 +123,12 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     };
   }
 
-  private static boolean isDigit(int cp) {
-    return cp >= '0' && cp <= '9';
-  }
-
-  /** In JSON whitespace is defined as the below 4 ASCII characters so this is what we accept */
-  private static boolean isWhitespace(int cp) {
-    return cp == ' ' || cp == '\t' || cp == '\r' || cp == '\n';
-  }
-
-  private int readNumber(int cp0, Consumer<Serializable> setter) {
-    StringBuilder n = new StringBuilder();
-    n.append((char) cp0);
-    int cp = nextCodePoint();
-    cp = readDigits(n, cp);
-    if (cp == '.') {
-      n.append('.');
-      cp = readDigits(n, nextCodePoint());
-    }
-    if (cp == 'e' || cp == 'E') {
-      n.append('e');
-      cp = nextCodePoint();
-      if (cp == '+' || cp == '-') {
-        n.append((char) cp);
-        cp = nextCodePoint();
-      }
-      cp = readDigits(n, cp);
-    }
-    double number = Double.parseDouble(n.toString());
-    if (number % 1 == 0d) {
-      long asLong = (long) number;
-      if (asLong < Integer.MAX_VALUE && asLong > Integer.MIN_VALUE) {
-        setter.accept((int) asLong);
-      } else setter.accept(asLong);
-    } else setter.accept(number);
-    return isWhitespace(cp) ? readCharSkipWhitespace() : cp;
-  }
-
-  private int readDigits(StringBuilder n, int cp0) {
-    int cp = cp0;
-    while (isDigit(cp)) {
-      n.append((char) cp);
-      cp = nextCodePoint();
-    }
-    return cp;
-  }
-
   /**
-   * Assumes the opening [ is already consumed.
+   * Assumes the opening double-quotes has been consumed already. After this method the closing
+   * double-quotes is the most recent already consumed character.
    *
-   * <p>After the parsing the closing ] is the last consumed character.
-   *
-   * @return list of directly converted values
+   * @return the JSON string node as Java {@link String}
    */
-  private ArrayList<Serializable> readArray() {
-    ArrayList<Serializable> res = new ArrayList<>();
-    int cp = ',';
-    while (cp != ']') {
-      if (cp != ',') throw formatException(cp, ',', ']');
-      cp = readNodeDetect(res::add);
-    }
-    return res;
-  }
-
-  private LinkedHashMap<String, Serializable> readMap() {
-    LinkedHashMap<String, Serializable> res = new LinkedHashMap<>();
-    int cp = ',';
-    while (cp != '}') {
-      if (cp != ',') throw formatException(cp, ',', '}');
-      readCharSkipWhitespaceAndExpect('"');
-      String key = readString();
-      readCharSkipWhitespaceAndExpect(':');
-      cp = readNodeDetect(value -> res.put(key, value));
-    }
-    return res;
-  }
-
   String readString() {
     StringBuilder str = new StringBuilder();
     int cp = nextCodePoint();
@@ -193,14 +163,17 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     throw formatException(-1, '"');
   }
 
-  private int nextCodePoint() {
-    return read.getAsInt();
+  void readCharSkipWhitespace(char expected) {
+    int cp = readCharSkipWhitespace();
+    if (cp != expected) throw formatException(cp, expected);
   }
 
-  void readCharSkipWhitespaceAndExpect(char expected) {
-    expect(expected, readCharSkipWhitespace());
-  }
-
+  /**
+   * This expects to find a non whitespace character in the input, otherwise this is considered an
+   * error.
+   *
+   * @return the next code point in the input that is not JSON whitespace
+   */
   int readCharSkipWhitespace() {
     int cp = nextCodePoint();
     while (cp != -1 && isWhitespace(cp)) cp = nextCodePoint();
@@ -208,8 +181,83 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     return cp;
   }
 
-  private void expect(char expected, int cp) {
-    if (cp != expected) throw formatException(cp, expected);
+  /*
+  Implementation
+   */
+
+  /** In JSON only ASCII digits are allowed */
+  private static boolean isDigit(int cp) {
+    return cp >= '0' && cp <= '9';
+  }
+
+  /** In JSON whitespace is defined as the below 4 ASCII characters so this is what we accept */
+  private static boolean isWhitespace(int cp) {
+    return cp == ' ' || cp == '\t' || cp == '\r' || cp == '\n';
+  }
+
+  private int readNumber(int cp0, Consumer<Serializable> setter) {
+    StringBuilder n = new StringBuilder();
+    n.append((char) cp0);
+    int cp = nextCodePoint();
+    cp = readDigits(n, cp);
+    if (cp == '.') {
+      n.append('.');
+      cp = readDigits(n, nextCodePoint());
+    }
+    if (cp == 'e' || cp == 'E') {
+      n.append('e');
+      cp = nextCodePoint();
+      if (cp == '+' || cp == '-') {
+        n.append((char) cp);
+        cp = nextCodePoint();
+      }
+      cp = readDigits(n, cp);
+    }
+    setter.accept(JsonMapping.toNumber(n.toString()));
+    return isWhitespace(cp) ? readCharSkipWhitespace() : cp;
+  }
+
+  private int readDigits(StringBuilder n, int cp0) {
+    int cp = cp0;
+    while (isDigit(cp)) {
+      n.append((char) cp);
+      cp = nextCodePoint();
+    }
+    return cp;
+  }
+
+  /**
+   * Assumes the opening [ is already consumed.
+   *
+   * <p>After the parsing the closing ] is the last consumed character.
+   *
+   * @return list of directly converted values
+   */
+  private ArrayList<Serializable> readArray() {
+    ArrayList<Serializable> res = new ArrayList<>();
+    int cp = ',';
+    while (cp != ']') {
+      if (cp != ',') throw formatException(cp, ',', ']');
+      cp = readNodeDetect(res::add);
+    }
+    return res;
+  }
+
+  private LinkedHashMap<String, Serializable> readMap() {
+    LinkedHashMap<String, Serializable> res = new LinkedHashMap<>();
+    int cp = ',';
+    while (cp != '}') {
+      if (cp != ',') throw formatException(cp, ',', '}');
+      readCharSkipWhitespace('"');
+      String key = readString();
+      readCharSkipWhitespace(':');
+      cp = readNodeDetect(value -> res.put(key, value));
+    }
+    return res;
+  }
+
+  private int nextCodePoint() {
+    return read.getAsInt();
   }
 
   private void skipCodePoints(int n) {
@@ -284,15 +332,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     return readCharSkipWhitespace();
   }
 
-  JsonFormatException formatException(int found, char... expected) {
-    String foundText = found == -1 ? "end of input" : "`" + Character.toString(found) + "`";
-    String expectedText =
-        expected.length == 0 ? "more input" : "one of " + toExpectedList(expected);
-    return new JsonFormatException(
-        "Expected " + expectedText + " but found: " + foundText + "\nat: " + printPosition.get());
-  }
-
-  private String toExpectedList(char[] expected) {
-    return new String(expected).chars().mapToObj(c -> "`" + (char) c + "`").collect(joining(","));
+  private JsonFormatException formatException(int found, char... expected) {
+    return unexpectedInputCharacter(found, printPosition, expected);
   }
 }

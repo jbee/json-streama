@@ -50,6 +50,26 @@ class TestJsonStream {
   }
 
   @Test
+  void annotatedKeyIsAccessibleViaItsName() {
+    String json = // language=JSON
+        """
+    {
+      "name": "Bone Machine",
+      "artist": "Tom Waits",
+      "genre": "Jazz",
+      "tracks": {
+        "1": { "name": "Earth Died Screaming"},
+        "2": { "name": "Dirt in the Ground"}
+      }
+    }
+    """;
+    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
+    assertEquals(
+        List.of("1. Earth Died Screaming", "2. Dirt in the Ground"),
+        album.tracks().map(track -> track.no() + ". " + track.name()).collect(toList()));
+  }
+
+  @Test
   void consumerRoot() {
     Playlist list = JsonStream.ofRoot(Playlist.class, asJsonInput(PLAYLIST_JSON));
 
