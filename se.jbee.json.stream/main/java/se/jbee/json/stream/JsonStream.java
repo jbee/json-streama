@@ -1,26 +1,48 @@
 package se.jbee.json.stream;
 
-import static java.lang.Character.isUpperCase;
-import static java.lang.Character.toLowerCase;
-import static java.util.Collections.emptyIterator;
-import static java.util.Spliterators.spliteratorUnknownSize;
-import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
-import static se.jbee.json.stream.JsonSchemaException.maxOccurExceeded;
-import static se.jbee.json.stream.JsonStream.MemberType.*;
+import se.jbee.json.stream.JsonMapping.JsonTo;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.io.Serializable;
+import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.*;
-import java.util.*;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
 import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
-import se.jbee.json.stream.JsonMapping.JsonTo;
+
+import static java.lang.Character.isUpperCase;
+import static java.lang.Character.toLowerCase;
+import static java.util.Arrays.fill;
+import static java.util.Collections.emptyIterator;
+import static java.util.Spliterators.spliteratorUnknownSize;
+import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
+import static se.jbee.json.stream.JsonSchemaException.maxOccurExceeded;
+import static se.jbee.json.stream.JsonStream.MemberType.*;
 
 /**
  * Reading complex JSON documents as streams using user defined interfaces and {@link Stream}/{@link
@@ -69,7 +91,7 @@ public final class JsonStream implements InvocationHandler {
   @SuppressWarnings("unchecked")
   public static <T> T ofRoot(Class<T> objType, IntSupplier in, JsonMapping mapping) {
     JsonStream handler = new JsonStream(in, mapping);
-    Member root = new Member(PROXY, "", objType, null, null, false, false, 0, Integer.MAX_VALUE);
+    Member root = new Member(PROXY_OBJECT, "", 1, objType, null, null, false, false, 0, Integer.MAX_VALUE);
     JsonFrame frame = handler.pushFrame(root);
     return (T) frame.proxy;
   }
@@ -82,7 +104,7 @@ public final class JsonStream implements InvocationHandler {
     int max = Integer.MAX_VALUE;
     Member member =
         new Member(
-            PROXY_STREAM, "", Stream.class, streamType, Stream.empty(), false, false, 0, max);
+            PROXY_STREAM, "", 1, Stream.class, streamType, Stream.empty(), false, false, 0, max);
     JsonStream handler = new JsonStream(in, mapping);
     @SuppressWarnings("unchecked")
     Stream<T> res = (Stream<T>) handler.yieldStreaming(member, new String[0]);
@@ -97,11 +119,13 @@ public final class JsonStream implements InvocationHandler {
         type,
         key -> {
           Map<String, Member> membersByName = new HashMap<>();
+          int n = 1;
           for (Method m : key.getMethods()) {
             if (!m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers())) {
-              Member member = new Member(m);
+              String name = Member.name(m);
+              int index = membersByName.containsKey(name) ? membersByName.get(name).index : n++;
+              Member member = new Member(m, index);
               MEMBERS_BY_METHOD.put(m, member);
-              String name = member.name();
               if (!membersByName.containsKey(name) || m.getParameterCount() == 0) {
                 membersByName.put(name, member);
               }
@@ -149,23 +173,21 @@ public final class JsonStream implements InvocationHandler {
       JsonFrame f = frames.get(i);
       if (!f.isOpened) continue;
       str.append(indent).append("{\n");
-      Set<Entry<String, Serializable>> entries = f.values.entrySet();
-      int n = 0;
-      for (Entry<String, Serializable> e : entries) {
-        n++;
-        Serializable v = e.getValue();
-        String name = e.getKey();
-        String no = i < frames.size() - 1 ? "" + (frames.get(i + 1).itemNo) : "?";
+      for (Entry<String, Serializable> value : f) {
+        Serializable v = value.getValue();
+        String name = value.getKey();
+        boolean notLastFrame = i < frames.size() - 1;
+        String no = notLastFrame ? "" + (frames.get(i + 1).itemNo) : "?";
         Member member = f.members.get(name);
         if (member == null) continue;
         if (!member.isStreaming()) {
           str.append(indent).append("\t\"").append(name).append("\": ").append(v).append(",\n");
         } else {
           str.append(indent).append("\t").append('"').append(name);
-          if (n == entries.size()) {
+          if (notLastFrame && name.equals(frames.get(i+1).of.name)) { // is this a member that is currently streamed by next frame?
             str.append("\": [... <").append(no).append(">\n");
           } else
-            str.append(" [")
+            str.append("\": [")
                 .append(Integer.valueOf(-1).equals(v) ? "..." : "<" + v + ">")
                 .append("],\n");
         }
@@ -215,25 +237,33 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private Object yieldValue(JsonFrame frame, Member member, Object[] args) {
-    String name = member.name();
     if (member.isStreaming()) {
-      if (!name.equals(frame.streamingMember)) {
-        frame.checkNotAlreadyProcessed(name);
+      if (!member.name.equals(frame.streamingMember)) {
+        frame.checkNotAlreadyProcessed(member);
         // assume the input does not contain the requested member so its value is empty
-        frame.markAsProcessed(name, -1);
+        frame.markAsProcessed(member, -1);
         return switch (member.type) {
-          case PROXY_STREAM -> Stream.empty();
-          case PROXY_ITERATOR -> emptyIterator();
-          default -> null;
+          case MAPPED_STREAM, PROXY_STREAM -> Stream.empty();
+          case MAPPED_ITERATOR, PROXY_ITERATOR -> emptyIterator();
+          default -> null; // = void for consumers
         };
       }
-      frame.markAsProcessed(name, 0);
+      frame.markAsProcessed(member, 0);
       // what we have is what we now are going to handle so afterwards we could do next one
       frame.streamingMember = null;
       return yieldStreaming(member, args);
+    } else if (member.type == PROXY_OBJECT) {
+      return frame.proxy; //TODO maybe makes no sense, frame is not member
+      /*
+      JsonStream h = new JsonStream(() -> -1, mapping);
+      JsonFrame f1 = h.pushFrame(member, (Map<String, Serializable>) frame.directValue(name));
+      f1.isOpened = true;
+      f1.isClosed = true;
+      return f1.proxy;
+      */
     }
-    // TODO single proxy
-    return yieldDirect(member, frame.directValue(name), args);
+    //TODO use member not name?
+    return yieldDirect(member, frame.directValue(member.name()), args);
   }
 
   private Object yieldDirect(Member member, Object value, Object[] args) {
@@ -242,12 +272,15 @@ public final class JsonStream implements InvocationHandler {
     if (value instanceof String s) return as == String.class ? s : jsonTo(as).mapString().apply(s);
     if (value instanceof Boolean b)
       return as == boolean.class || as == Boolean.class ? b : jsonTo(as).mapBoolean().apply(b);
-    if (value instanceof Number n) return yieldNumber(as, n);
-    if (value instanceof List<?> list) return yieldCollection(member, list, args);
+    if (value instanceof Number n) return yieldAsNumber(as, n);
+    if (value instanceof List<?> list) return yieldAsCollection(member, list, args);
     throw new UnsupportedOperationException("JSON value not supported: " + value);
   }
 
-  private Object yieldNumber(Class<?> as, Number n) {
+  /**
+   * A JSON number is mapped to a java {@link Number} subtype
+   */
+  private Object yieldAsNumber(Class<?> as, Number n) {
     if (as == Number.class) return n;
     if (as == int.class || as == Integer.class) return n.intValue();
     if (as == long.class || as == Long.class) return n.longValue();
@@ -257,12 +290,16 @@ public final class JsonStream implements InvocationHandler {
     return jsonTo(as).mapNumber().apply(n);
   }
 
-  private Object yieldCollection(Member member, List<?> list, Object[] args) {
+  /**
+   * A JSON array is mapped to a java collection subtype.
+   * The elements should be "simple" mapped values.
+   */
+  private Object yieldAsCollection(Member member, List<?> list, Object[] args) {
+    //TODO
     return null;
   }
 
   private Object yieldStreaming(Member member, Object[] args) {
-    // TODO consider non proxy streaming
     int cp = in.readCharSkipWhitespace();
     if (cp != '[' && cp != '{') throw formatException(cp, '[', '{');
     if (cp == '[') {
@@ -272,6 +309,7 @@ public final class JsonStream implements InvocationHandler {
         case PROXY_ITERATOR -> arrayAsProxyIterator(member);
         case PROXY_CONSUMER -> arrayViaProxyConsumer(member, args);
         case MAPPED_CONSUMER -> arrayViaMappedConsumer(member, args);
+        // TODO consider non proxy streaming
         default -> throw new UnsupportedOperationException("stream of " + member.type);
       };
     }
@@ -281,6 +319,7 @@ public final class JsonStream implements InvocationHandler {
       case PROXY_ITERATOR -> objectAsProxyIterator(member);
       case PROXY_CONSUMER -> objectViaProxyConsumer(member, args);
       case MAPPED_CONSUMER -> objectViaMappedConsumer(member, args);
+      // TODO consider non proxy streaming
       default -> throw new UnsupportedOperationException("stream of " + member.type);
     };
   }
@@ -307,13 +346,14 @@ public final class JsonStream implements InvocationHandler {
         frame.streamingMember = null;
         continue;
       } else if (member.isStreaming()) {
-        frame.checkNotAlreadyProcessed(name);
-        frame.streamingMember = name;
+        frame.checkNotAlreadyProcessed(member);
+        frame.streamingMember = member.name;
         frame.isPaused = true;
         return;
       }
       frame.streamingMember = null;
-      cp = in.readNodeDetect(val -> frame.setDirectValue(name, val));
+      // can be MAPPED_VALUE or PROXY_OBJECT
+      cp = in.readNodeDetect(val -> frame.setDirectValue(member, val));
     }
     frame.isClosed = true;
   }
@@ -334,7 +374,7 @@ public final class JsonStream implements InvocationHandler {
       cp = in.readNodeDetect(entry::setValue);
       c++;
     }
-    currentFrame().markAsProcessed(member.name(), c);
+    currentFrame().markAsProcessed(member, c);
     return null;
   }
 
@@ -350,7 +390,7 @@ public final class JsonStream implements InvocationHandler {
       String key = in.readString();
       in.readCharSkipWhitespace(':');
       frame.nextInStream();
-      frame.setDirectValue(JsonProperty.OBJECT_KEY, key);
+      frame.setDirectValue(null, key);
       consumer.accept(frame.proxy);
       cp = in.readCharSkipWhitespace();
     }
@@ -359,18 +399,18 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private Void arrayViaMappedConsumer(Member member, Object[] args) {
-    // TODO add mapping to consumer when needed
     @SuppressWarnings("unchecked")
     Consumer<Serializable> consumer = (Consumer<Serializable>) args[0];
     int c = 0;
     int cp = ',';
     while (cp != ']') {
       if (cp != ',') throw formatException(cp, ',', ']');
+      // TODO add mapping to consumer target type when needed (now it only supports direct JSON => java types)
       cp = in.readNodeDetect(consumer);
       c++;
     }
-    currentFrame().markAsProcessed(member.name(), c);
-    return null;
+    currentFrame().markAsProcessed(member, c);
+    return null; // = void
   }
 
   private Void arrayViaProxyConsumer(Member member, Object[] args) {
@@ -387,7 +427,7 @@ public final class JsonStream implements InvocationHandler {
       cp = in.readCharSkipWhitespace();
     }
     popFrame(member);
-    return null;
+    return null; // = void
   }
 
   private Stream<?> objectAsProxyStream(Member member) {
@@ -420,7 +460,7 @@ public final class JsonStream implements InvocationHandler {
         if (frame.isClosed) throw new NoSuchElementException("" + frame.itemNo);
         String key = in.readString(); // includes closing "
         in.readCharSkipWhitespace(':');
-        frame.setDirectValue(JsonProperty.OBJECT_KEY, key);
+        frame.setDirectValue(null, key);
         return frame.proxy;
       }
     };
@@ -471,11 +511,11 @@ public final class JsonStream implements InvocationHandler {
   private void popFrame(Member member) {
     JsonFrame done = stack.removeFirst();
     JsonFrame frame = currentFrame();
-    if (frame != null) frame.markAsProcessed(member.name(), done.itemNo + 1);
+    if (frame != null) frame.markAsProcessed(member, done.itemNo + 1);
   }
 
   private JsonFrame pushFrame(Member member) {
-    Class<?> type = member.isStreaming() ? member.streamType() : member.returnType();
+    Class<?> type = member.isStreaming() ? member.itemType() : member.returnType();
     JsonFrame frame = new JsonFrame(member, newProxy(type, this), initStreamType(type));
     stack.addFirst(frame);
     return frame;
@@ -486,17 +526,26 @@ public final class JsonStream implements InvocationHandler {
   }
 
   /** Holds the information and parse state for JSON input for a single JSON object level. */
-  private static class JsonFrame {
+  private static class JsonFrame implements Iterable<Entry<String,Serializable>> {
     final Member of;
     final Object proxy;
 
     final Map<String, Member> members;
-    private final String keyName;
     /**
      * The values of members read so far, for streaming members this holds the number of streamed
      * items once the member is done.
+     *
+     * Index 0 is always for the key member, if no such member exist first value is at index 1
      */
-    private final Map<String, Serializable> values = new LinkedHashMap<>();
+    private final Serializable[] values;
+    /**
+     * For each value (same index as {@link #values}) this remembers the order the value appeared in the input
+     */
+    private final int[] memberInputOrder;
+    /**
+     * Members read so far
+     */
+    private int memberInputCount;
 
     /** We did read the opening curly bracket of the object */
     boolean isOpened;
@@ -524,48 +573,59 @@ public final class JsonStream implements InvocationHandler {
       this.of = of;
       this.proxy = proxy;
       this.members = members;
-      this.keyName =
-          members.values().stream()
-              .filter(Member::isMapKey)
-              .findFirst()
-              .map(Member::name)
-              .orElse(null);
+      int size = members.size() + 1;
+      this.values = new Serializable[size];
+      this.memberInputOrder = new int[size];
     }
 
-    void setDirectValue(String member, Serializable value) {
-      if (member == JsonProperty.OBJECT_KEY && keyName != null) values.put(keyName, value);
-      values.put(member, value);
+    /**
+     * @return the current values of this frame by member name
+     */
+    @Override
+    public Iterator<Entry<String, Serializable>> iterator() {
+      Entry<String, Serializable>[] entries = new Entry[memberInputOrder.length];
+      for (Member m : members.values()) {
+        int i = m.index();
+        if (values[i] != null)
+          entries[memberInputOrder[i]] = new SimpleEntry<>(m.name, values[i]);
+      }
+      return Arrays.stream(entries).filter(Objects::nonNull).toList().iterator();
     }
 
-    boolean hasValue(String member) {
-      return values.containsKey(member);
+    void setDirectValue(Member member, Serializable value) {
+      int index = member == null ? 0 : member.index;
+      values[index] = value;
+      memberInputOrder[index] = memberInputCount++;
     }
 
     Serializable directValue(String member) {
-      return values.get(member);
+      return values[members.get(member).index];
     }
 
-    void markAsProcessed(String member, int itemNo) {
+    void markAsProcessed(Member member, int itemNo) {
       setDirectValue(member, itemNo);
     }
 
     void nextInStream() {
       itemNo++;
-      if (itemNo >= of.maxOccur()) throw maxOccurExceeded(of.streamType(), of.maxOccur());
+      if (itemNo >= of.maxOccur()) throw maxOccurExceeded(of.itemType(), of.maxOccur());
+      memberInputCount = 0;
       isOpened = false;
       isClosed = false;
       isPaused = false;
       streamingMember = null;
-      values.clear();
+      fill(values, null);
+      fill(memberInputOrder, 0);
     }
 
-    void checkNotAlreadyProcessed(String name) {
-      if (hasValue(name))
-        throw JsonSchemaException.outOfOrder(
-            name,
-            values.keySet().stream()
-                .filter(n -> members.get(n).isStreaming())
-                .filter(n -> !n.equals(name)));
+    void checkNotAlreadyProcessed(Member member) {
+      if (values[member.index] != null)
+        throw JsonSchemaException.outOfOrder(member.name,
+            members.values().stream()
+                .filter(Member::isStreaming)
+                .filter(m -> m != member)
+                .filter(m -> values[m.index] != null)
+                .map(m -> m.name));
     }
   }
 
@@ -579,7 +639,7 @@ public final class JsonStream implements InvocationHandler {
    */
   enum MemberType {
     /** JSON value is directly mapped to the Java type */
-    MAPPED,
+    MAPPED_VALUE,
     /**
      * JSON array or object consumed as Java {@link Stream} where each value is mapped directly from
      * a JSON value to a Java value
@@ -596,7 +656,7 @@ public final class JsonStream implements InvocationHandler {
      */
     MAPPED_CONSUMER,
     /** JSON object consumed in Java via {@link Proxy} of a user defined interface */
-    PROXY,
+    PROXY_OBJECT,
     /**
      * JSON array or object consumed as Java {@link Stream} of {@link Proxy} instances of a user
      * defined interface
@@ -619,27 +679,29 @@ public final class JsonStream implements InvocationHandler {
    * returnType.
    *
    * @param returnType root returnType
-   * @param streamType of the items used in a stream for this member - only set if this is streaming
+   * @param itemType of the items used in a stream for this member - only set if this is streaming or collection
    * @param providesDefault true in case the method represented by this member has a default
    *     argument to return in case the member is not present or given as JSON null
    */
-  private static record Member(
+  private record Member(
       MemberType type,
       String name,
+      int index,
       Class<?> returnType,
-      Class<?> streamType,
+      Class<?> itemType,
       Object nullValue,
       boolean providesDefault,
       boolean isMapKey,
       int minOccur,
       int maxOccur) {
 
-    public Member(Method m) {
+    public Member(Method m, int index) {
       this(
           type(m),
           name(m),
+          isMapKey(m) ? 0 : index,
           m.getReturnType(),
-          streamType(m),
+          itemType(m),
           nullValue(m),
           providesDefault(m),
           isMapKey(m),
@@ -648,7 +710,7 @@ public final class JsonStream implements InvocationHandler {
     }
 
     boolean isStreaming() {
-      return type != MAPPED && type != PROXY;
+      return type != MAPPED_VALUE && type != PROXY_OBJECT;
     }
 
     private static MemberType type(Method m) {
@@ -667,7 +729,7 @@ public final class JsonStream implements InvocationHandler {
         return isProxyInterface(actualTypeGeneric(m.getGenericParameterTypes()[0]))
             ? PROXY_CONSUMER
             : MAPPED_CONSUMER;
-      return isProxyInterface(as) ? PROXY : MAPPED;
+      return isProxyInterface(as) ? PROXY_OBJECT : MAPPED_VALUE;
     }
 
     private static String name(Method m) {
@@ -682,12 +744,11 @@ public final class JsonStream implements InvocationHandler {
       return name;
     }
 
-    private static Class<?> streamType(Method m) {
+    private static Class<?> itemType(Method m) {
       return switch (type(m)) {
-        case MAPPED, PROXY -> null;
+        case MAPPED_VALUE, PROXY_OBJECT -> null;
         case PROXY_CONSUMER, MAPPED_CONSUMER -> actualTypeGeneric(m.getGenericParameterTypes()[0]);
-        case PROXY_STREAM, PROXY_ITERATOR, MAPPED_STREAM, MAPPED_ITERATOR -> (Class<?>)
-            ((ParameterizedType) m.getGenericReturnType()).getActualTypeArguments()[0];
+        case PROXY_STREAM, PROXY_ITERATOR, MAPPED_STREAM, MAPPED_ITERATOR -> actualTypeGeneric(m.getGenericReturnType());
       };
     }
 
@@ -697,7 +758,8 @@ public final class JsonStream implements InvocationHandler {
     }
 
     private static boolean isMapKey(Method m) {
-      return m.isAnnotationPresent(JsonProperty.class) && m.getAnnotation(JsonProperty.class).key();
+      return m.isAnnotationPresent(JsonProperty.class) && m.getAnnotation(JsonProperty.class).key()
+          || m.getName().equals("key");
     }
 
     private static int minOccur(Method m) {
@@ -713,8 +775,9 @@ public final class JsonStream implements InvocationHandler {
     private static Object nullValue(Method m) {
       Class<?> as = m.getReturnType();
       if (!as.isPrimitive()) {
+        //TODO empty collections?
         return switch (type(m)) {
-          case MAPPED, PROXY, PROXY_CONSUMER, MAPPED_CONSUMER -> null;
+          case MAPPED_VALUE, PROXY_OBJECT, PROXY_CONSUMER, MAPPED_CONSUMER -> null;
           case PROXY_STREAM, MAPPED_STREAM -> Stream.empty();
           case PROXY_ITERATOR, MAPPED_ITERATOR -> emptyIterator();
         };

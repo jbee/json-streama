@@ -61,7 +61,7 @@ class TestJsonStreamObjectMethods {
         """
     {
     	"artist": Tom Waits,
-    	"singles [<1>],
+    	"singles": [<1>],
     	"albums": [... <-1>
     	<stream position>""",
         discography.toString());
