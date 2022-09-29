@@ -237,7 +237,7 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private Object yieldValue(JsonFrame frame, Member member, Object[] args) {
-    if (member.isStreaming()) {
+    if (member.isPausing()) {
       if (!member.name.equals(frame.streamingMember)) {
         frame.checkNotAlreadyProcessed(member);
         // assume the input does not contain the requested member so its value is empty
@@ -315,6 +315,7 @@ public final class JsonStream implements InvocationHandler {
     }
     // stream from object
     return switch (member.type) {
+      case PROXY_OBJECT -> objectAsProxy(member);
       case PROXY_STREAM -> objectAsProxyStream(member);
       case PROXY_ITERATOR -> objectAsProxyIterator(member);
       case PROXY_CONSUMER -> objectViaProxyConsumer(member, args);
@@ -345,17 +346,20 @@ public final class JsonStream implements InvocationHandler {
         cp = in.skipNodeDetect();
         frame.streamingMember = null;
         continue;
-      } else if (member.isStreaming()) {
+      } else if (member.isPausing()) {
         frame.checkNotAlreadyProcessed(member);
         frame.streamingMember = member.name;
         frame.isPaused = true;
         return;
       }
       frame.streamingMember = null;
-      // can be MAPPED_VALUE or PROXY_OBJECT
+      // MAPPED_VALUE
       cp = in.readNodeDetect(val -> frame.setDirectValue(member, val));
     }
     frame.isClosed = true;
+    // need to end frame of single proxy objects (unless it is the root)
+    if (frame.of.type == PROXY_OBJECT && stack.size() > 1)
+      popFrame(frame.of);
   }
 
   private Void objectViaMappedConsumer(Member member, Object[] args) {
@@ -428,6 +432,12 @@ public final class JsonStream implements InvocationHandler {
     }
     popFrame(member);
     return null; // = void
+  }
+
+  private Object objectAsProxy(Member member) {
+    JsonFrame frame = pushFrame(member);
+    frame.isOpened = true;
+    return frame.proxy;
   }
 
   private Stream<?> objectAsProxyStream(Member member) {
@@ -711,6 +721,10 @@ public final class JsonStream implements InvocationHandler {
 
     boolean isStreaming() {
       return type != MAPPED_VALUE && type != PROXY_OBJECT;
+    }
+
+    boolean isPausing() {
+      return type != MAPPED_VALUE;
     }
 
     private static MemberType type(Method m) {

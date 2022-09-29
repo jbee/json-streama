@@ -326,6 +326,16 @@ String name = track.name("unknown");
 * are stream members out of order detected? **Yes**, => exception
 * can the supported Java types be extended? **Yes** (WIP)
 
+```
+______                       __  
+|  _  \                     /  |
+| | | |___ _ __ ___   ___   `| |
+| | | / _ \ '_ ` _ \ / _ \   | |
+| |/ /  __/ | | | | | (_) | _| |_
+|___/ \___|_| |_| |_|\___/  \___/
+```
+
+
 
 ## How are we doing?
 
@@ -344,18 +354,23 @@ String name = track.name("unknown");
 Noice!
 
 
-## Performance Notes
+## Implementation Notes
 
-#### Proxies
-Only one per member independent of the number of items in a stream
+* **Proxies**: creates only one per member (independent of the number of items in a stream)
+* **Simple Values**: are stored and accessed via index access in a reused array per member
+* **Parser**:
+  * zero look ahead 
+  * "self-suspending" PEG parser
 
-#### Simple Values
-Stored and accessed via index access in a reused array per member
+```
+______                       _____ 
+|  _  \                     / __  \
+| | | |___ _ __ ___   ___   `' / /'
+| | | / _ \ '_ ` _ \ / _ \    / /  
+| |/ /  __/ | | | | | (_) | ./ /___
+|___/ \___|_| |_| |_|\___/  \_____/
+```
 
-
-#### Numbers, Please
-
-Demo... 
 
 
 

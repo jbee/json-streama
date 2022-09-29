@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 
-import static java.lang.String.format;
 import static java.lang.System.currentTimeMillis;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
