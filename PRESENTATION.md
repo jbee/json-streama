@@ -376,3 +376,11 @@ ______                       _____
 
 
 ## Questions?
+
+
+Work in progress:
+
+* `IntStream`, `LongStream`, ...
+* `Stream<String>`, `Stream<Date>`, ...
+* `List<String>`, `Map<String,Integer>` ...
+* manual skipping  

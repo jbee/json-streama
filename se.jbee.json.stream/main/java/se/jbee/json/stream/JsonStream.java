@@ -252,18 +252,8 @@ public final class JsonStream implements InvocationHandler {
       // what we have is what we now are going to handle so afterwards we could do next one
       frame.streamingMember = null;
       return yieldStreaming(member, args);
-    } else if (member.type == PROXY_OBJECT) {
-      return frame.proxy; //TODO maybe makes no sense, frame is not member
-      /*
-      JsonStream h = new JsonStream(() -> -1, mapping);
-      JsonFrame f1 = h.pushFrame(member, (Map<String, Serializable>) frame.directValue(name));
-      f1.isOpened = true;
-      f1.isClosed = true;
-      return f1.proxy;
-      */
     }
-    //TODO use member not name?
-    return yieldDirect(member, frame.directValue(member.name()), args);
+    return yieldDirect(member, frame.directValue(member), args);
   }
 
   private Object yieldDirect(Member member, Object value, Object[] args) {
@@ -608,8 +598,8 @@ public final class JsonStream implements InvocationHandler {
       memberInputOrder[index] = memberInputCount++;
     }
 
-    Serializable directValue(String member) {
-      return values[members.get(member).index];
+    Serializable directValue(Member member) {
+      return values[member.index];
     }
 
     void markAsProcessed(Member member, int itemNo) {
