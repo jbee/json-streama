@@ -7,8 +7,6 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -121,7 +119,7 @@ public final class JsonStream implements InvocationHandler {
           Map<String, Member> membersByName = new HashMap<>();
           int n = 1;
           for (Method m : key.getMethods()) {
-            if (!m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers())) {
+            if (!m.isDefault() && !m.isSynthetic() && !Modifier.isStatic(m.getModifiers()) && !m.getName().equals("skip")) {
               String name = Member.name(m);
               int index = membersByName.containsKey(name) ? membersByName.get(name).index : n++;
               Member member = new Member(m, index);
@@ -152,6 +150,8 @@ public final class JsonStream implements InvocationHandler {
    * structure is at the end.
    */
   private final Deque<JsonFrame> stack = new LinkedList<>();
+
+  private Object skipNextCallToProxy;
 
   private JsonStream(IntSupplier in, JsonMapping mapping) {
     this.in = new JsonReader(in, this::toString);
@@ -192,7 +192,7 @@ public final class JsonStream implements InvocationHandler {
                 .append("],\n");
         }
       }
-      if (f.streamingMember != null) str.append("<" + f.streamingMember + "?>");
+      if (f.suspendedAtMember != null) str.append("<" + f.suspendedAtMember + "?>");
       if (f.isClosed) str.append(indent).append("}\n");
       indent += "\t";
     }
@@ -211,14 +211,7 @@ public final class JsonStream implements InvocationHandler {
   public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
     Class<?> declaringClass = method.getDeclaringClass();
     if (method.isDefault()) {
-      return MethodHandles.lookup()
-          .findSpecial(
-              declaringClass,
-              method.getName(),
-              MethodType.methodType(method.getReturnType(), method.getParameterTypes()),
-              declaringClass)
-          .bindTo(proxy)
-          .invokeWithArguments(args);
+      throw new UnsupportedOperationException("Default methods cannot be used on proxies yet.");
     }
     if (declaringClass == Object.class) {
       return switch (method.getName()) {
@@ -228,17 +221,30 @@ public final class JsonStream implements InvocationHandler {
         default -> null;
       };
     }
+    if (method.getName().equals("skip")) {
+      skipNextCallToProxy = proxy;
+      return null; // assume void
+    }
 
     JsonFrame frame = currentFrame();
+
+    if (skipNextCallToProxy != null) {
+      skipNextCallToProxy = null;
+      if (frame.proxy == skipNextCallToProxy && frame.suspendedAtMember != null && frame.suspendedAtMember.equals(MEMBERS_BY_METHOD.get(method).name) ) {
+        in.skipNodeDetect();
+      }
+      return null; // we skip
+    }
+
     if (frame.proxy != proxy)
       throw new IllegalStateException("Parent proxy called out of order\nat: " + this);
-    readMembers(frame);
+    readSimpleMembersAndSuspend(frame);
     return yieldValue(frame, MEMBERS_BY_METHOD.get(method), args);
   }
 
   private Object yieldValue(JsonFrame frame, Member member, Object[] args) {
-    if (member.isPausing()) {
-      if (!member.name.equals(frame.streamingMember)) {
+    if (member.isSuspending()) {
+      if (!member.name.equals(frame.suspendedAtMember)) {
         frame.checkNotAlreadyProcessed(member);
         // assume the input does not contain the requested member so its value is empty
         frame.markAsProcessed(member, -1);
@@ -250,7 +256,7 @@ public final class JsonStream implements InvocationHandler {
       }
       frame.markAsProcessed(member, 0);
       // what we have is what we now are going to handle so afterwards we could do next one
-      frame.streamingMember = null;
+      frame.suspendedAtMember = null;
       return yieldStreaming(member, args);
     }
     return yieldDirect(member, frame.directValue(member), args);
@@ -315,15 +321,15 @@ public final class JsonStream implements InvocationHandler {
     };
   }
 
-  private void readMembers(JsonFrame frame) {
-    if (frame.streamingMember != null || frame.isClosed) return;
+  private void readSimpleMembersAndSuspend(JsonFrame frame) {
+    if (frame.suspendedAtMember != null || frame.isClosed) return;
     int cp = ',';
     if (!frame.isOpened) {
       in.readCharSkipWhitespace('{');
       frame.isOpened = true;
-    } else if (frame.isPaused) {
+    } else if (frame.isSuspended) {
       cp = in.readCharSkipWhitespace(); // should be , or }
-      frame.isPaused = false;
+      frame.isSuspended = false;
     }
     while (cp != '}') {
       if (cp != ',') throw formatException(cp, ',', '}');
@@ -334,15 +340,15 @@ public final class JsonStream implements InvocationHandler {
       if (member == null) {
         // input has a member that is not mapped to java, we ignore it
         cp = in.skipNodeDetect();
-        frame.streamingMember = null;
+        frame.suspendedAtMember = null;
         continue;
-      } else if (member.isPausing()) {
+      } else if (member.isSuspending()) {
         frame.checkNotAlreadyProcessed(member);
-        frame.streamingMember = member.name;
-        frame.isPaused = true;
+        frame.suspendedAtMember = member.name;
+        frame.isSuspended = true;
         return;
       }
-      frame.streamingMember = null;
+      frame.suspendedAtMember = null;
       // MAPPED_VALUE
       cp = in.readNodeDetect(val -> frame.setDirectValue(member, val));
     }
@@ -559,7 +565,7 @@ public final class JsonStream implements InvocationHandler {
      * object. This flag is required to remember that we need to read next non whitespace input
      * character to complete the member.
      */
-    boolean isPaused;
+    boolean isSuspended;
 
     int itemNo = -1;
 
@@ -567,7 +573,7 @@ public final class JsonStream implements InvocationHandler {
      * A {@link Member#isStreaming()} input that is not yet been processed - if set we are at the
      * start of that member value in the input stream
      */
-    String streamingMember;
+    String suspendedAtMember;
 
     private JsonFrame(Member of, Object proxy, Map<String, Member> members) {
       this.of = of;
@@ -612,8 +618,8 @@ public final class JsonStream implements InvocationHandler {
       memberInputCount = 0;
       isOpened = false;
       isClosed = false;
-      isPaused = false;
-      streamingMember = null;
+      isSuspended = false;
+      suspendedAtMember = null;
       fill(values, null);
       fill(memberInputOrder, 0);
     }
@@ -713,7 +719,7 @@ public final class JsonStream implements InvocationHandler {
       return type != MAPPED_VALUE && type != PROXY_OBJECT;
     }
 
-    boolean isPausing() {
+    boolean isSuspending() {
       return type != MAPPED_VALUE;
     }
 
