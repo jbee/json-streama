@@ -1,5 +1,6 @@
 package test.integration;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonStream;
 
@@ -12,6 +13,7 @@ import java.util.Iterator;
 
 import static java.lang.System.currentTimeMillis;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class TestJsonStreamPerformance {
 
@@ -52,10 +54,12 @@ class TestJsonStreamPerformance {
 
   @Test
   void testPerformance() throws IOException {
-    long avg = 0;
-    int n = 0;
     File input = Path.of("").resolve("data.json").toFile();
 
+    assumeTrue(input.exists(), "input does not exist, abort performance testing: "+input);
+
+    long avg = 0;
+    int n = 0;
     long startMs = currentTimeMillis();
     try (RandomAccessFile file = new RandomAccessFile(input, "r"))
     {
