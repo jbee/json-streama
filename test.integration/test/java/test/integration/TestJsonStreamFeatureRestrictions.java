@@ -17,7 +17,7 @@ import se.jbee.json.stream.JsonStream;
  * <p>These are the {@link JsonProperty#minOccur()}, {@link JsonProperty#maxOccur()} and {@link
  * JsonProperty#required()} restrictions.
  */
-class TestJsonStreamRestrictions {
+class TestJsonStreamFeatureRestrictions {
 
   interface Root {
     @JsonProperty(maxOccur = 3)

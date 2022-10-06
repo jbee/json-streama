@@ -260,7 +260,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     return read.getAsInt();
   }
 
-  private void skipCodePoints(int n) {
+  public void skipCodePoints(int n) {
     for (int i = 0; i < n; i++) if (nextCodePoint() == -1) throw formatException(-1);
   }
 

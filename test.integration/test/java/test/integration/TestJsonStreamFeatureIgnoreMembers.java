@@ -8,7 +8,7 @@ import se.jbee.json.stream.JsonStream;
 import test.integration.Model.Album;
 
 /** See if the {@link JsonStream} can handle skipping unmapped members. */
-class TestJsonStreamSkip {
+class TestJsonStreamFeatureIgnoreMembers {
 
   @Test
   void skipNumberMember() {

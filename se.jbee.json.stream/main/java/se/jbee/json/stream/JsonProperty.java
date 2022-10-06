@@ -13,16 +13,14 @@ public @interface JsonProperty {
   Mapping
    */
 
-  /**
-   * The key used internally when an JSON input "map" object is treated as if it was a sequence of
-   * objects which had a special member called "(key)". This is accessed by annotating with {@link
-   * #key()} of {@code true}.
-   */
-  String OBJECT_KEY = "(key)";
-
   String name() default "";
 
   boolean key() default false;
+
+  /**
+   * @return by default if a JSON object member is either not defined or defined JSON {@code null} a "empty value" is used. For example an empty list. If instead Java {@code null} should be used this can be set true.
+   */
+  boolean undefinedAsNull() default false; //TODO implement
 
   /*
   Validation

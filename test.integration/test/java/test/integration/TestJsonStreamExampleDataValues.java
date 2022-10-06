@@ -1,23 +1,26 @@
 package test.integration;
 
-import org.junit.jupiter.api.Test;
-import se.jbee.json.stream.JsonStream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static test.integration.Utils.asJsonInput;
 
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
-
-class TestJsonStreamDataValues {
+class TestJsonStreamExampleDataValues {
 
   interface DataValueSet {
 
     String dataSet();
+
     Date completeDate();
+
     String period();
+
     String orgUnit();
+
     String attributeOptionCombo();
     // ...
 
@@ -26,18 +29,27 @@ class TestJsonStreamDataValues {
 
   interface DataValue {
     String dataElement();
+
     String period();
+
     String orgUnit();
+
     String categoryOptionCombo();
+
     String attributeOptionCombo();
+
     String value();
+
     String storedBy();
+
     Date created();
+
     Date lastUpdated();
+
     String comment();
   }
 
-  private static final String JSON = //language=JSON
+  private static final String JSON = // language=JSON
       """
           {
               "dataSet": "dataSetID",
@@ -75,7 +87,7 @@ class TestJsonStreamDataValues {
     assertEquals("dataSetID", set.dataSet());
     assertEquals("orgUnitID", set.orgUnit());
 
-    assertEquals(List.of(1,2,3),
-        set.dataValues().map(DataValue::value).map(Integer::parseInt).toList());
+    assertEquals(
+        List.of(1, 2, 3), set.dataValues().map(DataValue::value).map(Integer::parseInt).toList());
   }
 }

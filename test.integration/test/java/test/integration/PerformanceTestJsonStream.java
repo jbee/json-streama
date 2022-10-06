@@ -1,8 +1,8 @@
 package test.integration;
 
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Test;
-import se.jbee.json.stream.JsonStream;
+import static java.lang.System.currentTimeMillis;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.*;
 import java.nio.MappedByteBuffer;
@@ -10,15 +10,14 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
+import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonStream;
 
-import static java.lang.System.currentTimeMillis;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
-class TestJsonStreamPerformance {
+class PerformanceTestJsonStream {
 
   interface Data {
     String id();
+
     String name();
 
     Iterator<Entry> entries();
@@ -26,6 +25,7 @@ class TestJsonStreamPerformance {
 
   interface Entry {
     int a();
+
     int b();
   }
 
@@ -37,15 +37,13 @@ class TestJsonStreamPerformance {
       int v = 10_000;
       int inc = 1;
       for (int i = 0; i < n; i++) {
-        if (i > 0)
-          out.append(",");
+        if (i > 0) out.append(",");
         out.append("\n{\"a\":");
         v += inc;
         out.append(String.valueOf(v)).append(", \"b\":");
         v += inc;
         out.append(String.valueOf(v)).append("}");
-        if (v > 100_000 || v <= 10_000)
-          inc *= -1;
+        if (v > 100_000 || v <= 10_000) inc *= -1;
       }
       out.append("]}");
     }
@@ -56,15 +54,15 @@ class TestJsonStreamPerformance {
   void testPerformance() throws IOException {
     File input = Path.of("").resolve("data.json").toFile();
 
-    assumeTrue(input.exists(), "input does not exist, abort performance testing: "+input);
+    assumeTrue(input.exists(), "input does not exist, abort performance testing: " + input);
 
     long avg = 0;
     int n = 0;
     long startMs = currentTimeMillis();
-    try (RandomAccessFile file = new RandomAccessFile(input, "r"))
-    {
+    try (RandomAccessFile file = new RandomAccessFile(input, "r")) {
       FileChannel fileChannel = file.getChannel();
-      MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
+      MappedByteBuffer buffer =
+          fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
       Data data = JsonStream.ofRoot(Data.class, buffer::get);
       Iterator<Entry> entries = data.entries();
       while (entries.hasNext()) {
@@ -75,10 +73,12 @@ class TestJsonStreamPerformance {
       avg /= n;
     }
     long duration = currentTimeMillis() - startMs;
-    assertTrue(avg >= 50000 && avg <= 56000, "was "+avg);
+    assertTrue(avg >= 50000 && avg <= 56000, "was " + avg);
     long fileSizeMB = Files.size(input.toPath()) / (1024 * 1024);
     System.out.printf("File is %d MB in size%n", fileSizeMB);
-    System.out.printf("Throughput was %d MB/sec or %d entries/sec%n", fileSizeMB * 1000 / duration, n * 1000L / duration);
-    System.out.printf("%d ns/entry%n", duration*1000_0000/n);
+    System.out.printf(
+        "Throughput was %d MB/sec or %d entries/sec%n",
+        fileSizeMB * 1000 / duration, n * 1000L / duration);
+    System.out.printf("%d ns/entry%n", duration * 1000_0000 / n);
   }
 }

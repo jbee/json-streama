@@ -1,26 +1,29 @@
 package test.integration;
 
-import org.junit.jupiter.api.Test;
-import se.jbee.json.stream.JsonStream;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static test.integration.Utils.asJsonInput;
 
+import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonStream;
+
 /**
- * Tests that focus on scenarios where single {@link java.lang.reflect.Proxy} backed user types occur in the structure.
+ * Tests that focus on scenarios where single {@link java.lang.reflect.Proxy} backed user types
+ * occur in the structure.
  */
-class TestJsonStreamProxyObjects {
+class TestJsonStreamSingleProxies {
 
   interface Entry {
     Entry down();
+
     String content();
+
     Entry another();
   }
 
   @Test
   void test() {
     String json = // language=JSON
-        """ 
+        """
           {
             "down": {
               "content": "hallo",

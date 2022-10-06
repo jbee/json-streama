@@ -30,7 +30,7 @@ import test.integration.Model.Track;
  * A third returnType of error is a programming error when using the {@link java.lang.reflect.Proxy}
  * API. Parent proxies cannot be used while type their child stream members.
  */
-class TestJsonStreamExceptions {
+class TestJsonStreamFeatureExceptions {
 
   @Test
   void nullValueInAStreamIsFormatException() {
