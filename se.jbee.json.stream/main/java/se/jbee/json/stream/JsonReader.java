@@ -4,7 +4,11 @@ import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
 import java.io.Serializable;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.function.Consumer;
@@ -45,6 +49,26 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     't', 'f', // boolean
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'
   };
+
+  static IntSupplier from(InputStream in) {
+    return () -> {
+      try {
+        return in.read();
+      } catch (IOException ex) {
+        throw new UncheckedIOException(ex);
+      }
+    };
+  }
+
+  static IntSupplier from(Reader in) {
+    return () -> {
+      try {
+        return in.read();
+      } catch (IOException ex) {
+        throw new UncheckedIOException(ex);
+      }
+    };
+  }
 
   /*
   API
@@ -213,8 +237,19 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       }
       cp = readDigits(n, cp);
     }
-    setter.accept(JsonMapping.toNumber(n.toString()));
+    setter.accept(parseNumber(n.toString()));
     return isWhitespace(cp) ? readCharSkipWhitespace() : cp;
+  }
+
+  static Number parseNumber(String value) {
+    // TODO handle big int/big decimal
+    double number = Double.parseDouble(value);
+    if (number % 1 == 0d) {
+      long asLong = (long) number;
+      if (asLong < Integer.MAX_VALUE && asLong > Integer.MIN_VALUE) {
+        return (int) asLong;
+      } else return asLong;
+    } else return number;
   }
 
   private int readDigits(StringBuilder n, int cp0) {

@@ -1,7 +1,8 @@
 package test.integration;
 
-import org.junit.jupiter.api.Test;
-import se.jbee.json.stream.JsonStream;
+import static java.util.stream.Collectors.toList;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static test.integration.Utils.asJsonInput;
 
 import java.lang.annotation.RetentionPolicy;
 import java.util.AbstractMap.SimpleEntry;
@@ -11,10 +12,8 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
-
-import static java.util.stream.Collectors.toList;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
+import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonStream;
 
 /**
  * Test scenarios where the streaming is done from an object "map" in the input processed as some
@@ -35,8 +34,8 @@ class TestJsonStreamObjectsOfMapped {
     }
 
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
-    assertEquals(List.of(entry("a", 1), entry("b", 2), entry("c", 3)),
-        root.values().collect(toList()));
+    assertEquals(
+        List.of(entry("a", 1), entry("b", 2), entry("c", 3)), root.values().collect(toList()));
   }
 
   @Test
@@ -48,13 +47,13 @@ class TestJsonStreamObjectsOfMapped {
         }
         """;
     interface Root {
-      Iterator<Entry<Integer,String>> values();
+      Iterator<Entry<Integer, String>> values();
     }
 
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
     var actual = new ArrayList<>();
     root.values().forEachRemaining(actual::add);
-    assertEquals(List.of(entry(1,"a"), entry(2,"b"), entry(3,"c")), actual);
+    assertEquals(List.of(entry(1, "a"), entry(2, "b"), entry(3, "c")), actual);
   }
 
   @Test
@@ -72,10 +71,15 @@ class TestJsonStreamObjectsOfMapped {
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
     var actual = new ArrayList<>();
     root.values(actual::add);
-    assertEquals(List.of(entry(RetentionPolicy.SOURCE, true), entry(RetentionPolicy.RUNTIME, false), entry(RetentionPolicy.CLASS, true)), actual);
+    assertEquals(
+        List.of(
+            entry(RetentionPolicy.SOURCE, true),
+            entry(RetentionPolicy.RUNTIME, false),
+            entry(RetentionPolicy.CLASS, true)),
+        actual);
   }
 
-  private static <K,V> SimpleEntry<K, V> entry(K key, V value) {
+  private static <K, V> SimpleEntry<K, V> entry(K key, V value) {
     return new SimpleEntry<>(key, value);
   }
 }

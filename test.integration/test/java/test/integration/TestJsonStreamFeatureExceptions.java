@@ -106,6 +106,7 @@ class TestJsonStreamFeatureExceptions {
         assertThrows(
             IllegalStateException.class,
             () -> tracks.forEachOrdered(track -> track.name().concat(album.artist())));
+
     assertEquals(
         """
 			Parent proxy called out of order

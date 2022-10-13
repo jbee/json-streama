@@ -18,9 +18,14 @@ public @interface JsonProperty {
   boolean key() default false;
 
   /**
-   * @return by default if a JSON object member is either not defined or defined JSON {@code null} a "empty value" is used. For example an empty list. If instead Java {@code null} should be used this can be set true.
+   * @return by default if a JSON object member is either not defined or defined JSON {@code null} a
+   *     "empty value" is used. For example an empty list. If instead Java {@code null} should be
+   *     used this can be set true.
    */
-  boolean undefinedAsNull() default false; //TODO implement
+  boolean undefinedAsNull() default false; // TODO implement
+
+  // TODO some enum to limit which simple JSON values should be accepted as otherwise any simple
+  // value is mapped
 
   /*
   Validation

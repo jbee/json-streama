@@ -1,7 +1,7 @@
 package test.integration;
 
-import org.junit.jupiter.api.Test;
-import se.jbee.json.stream.JsonStream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static test.integration.Utils.asJsonInput;
 
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
@@ -10,9 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
+import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonStream;
 
 /**
  * Tests scenarios where the streaming is done from an array in the input processed as some
@@ -85,7 +84,8 @@ class TestJsonStreamArraysOfMapped {
     }
 
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
-    assertEquals(List.of(new SimpleEntry<>(0,1.3d), new SimpleEntry<>(1,2.4d), new SimpleEntry<>(2,3.5)),
+    assertEquals(
+        List.of(new SimpleEntry<>(0, 1.3d), new SimpleEntry<>(1, 2.4d), new SimpleEntry<>(2, 3.5)),
         root.values().toList());
   }
 
@@ -102,8 +102,7 @@ class TestJsonStreamArraysOfMapped {
     }
 
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
-    assertEquals(List.of(List.of(1,2), List.of(3,4), List.of(5,6)),
-        root.values().toList());
+    assertEquals(List.of(List.of(1, 2), List.of(3, 4), List.of(5, 6)), root.values().toList());
   }
 
   @Test
@@ -117,12 +116,15 @@ class TestJsonStreamArraysOfMapped {
         """;
     interface Root {
       Stream<Integer> values();
+
       Stream<Integer> afterNull();
     }
 
     Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
-    assertEquals(Stream.empty().toList(), root.values().toList(), "null is not resulting in empty stream");
-    assertEquals(List.of(1), root.afterNull().toList(), "next streaming member not continued correctly");
+    assertEquals(
+        Stream.empty().toList(), root.values().toList(), "null is not resulting in empty stream");
+    assertEquals(
+        List.of(1), root.afterNull().toList(), "next streaming member not continued correctly");
   }
 
   // TODO tests with multiple streaming members, also to see if the iterator completes the parsing

@@ -11,6 +11,6 @@ final class Utils {
   }
 
   static IntSupplier asJsonInput(String json) {
-    return JsonStream.from(new StringReader(json));
+    return JsonStream.asIntSupplier(new StringReader(json));
   }
 }
