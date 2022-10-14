@@ -65,7 +65,7 @@ public final class JsonStream implements InvocationHandler {
   }
 
   public static <T> T ofRoot(Class<T> objType, IntSupplier in) {
-    return ofRoot(objType, in, JsonToJava.auto());
+    return ofRoot(objType, in, JsonToJava.DEFAULT);
   }
 
   @SuppressWarnings("unchecked")
@@ -79,7 +79,7 @@ public final class JsonStream implements InvocationHandler {
   }
 
   public static <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
-    return of(streamType, in, JsonToJava.auto());
+    return of(streamType, in, JsonToJava.DEFAULT);
   }
 
   public static <T> Stream<T> of(Class<T> streamType, IntSupplier in, JsonToJava toJava) {

@@ -23,6 +23,7 @@ public @interface JsonProperty {
    *     used this can be set true.
    */
   boolean undefinedAsNull() default false; // TODO implement
+  // also give possibility to give the null value as string (so factory converters can be adjusted)
 
   // TODO some enum to limit which simple JSON values should be accepted as otherwise any simple
   // value is mapped
