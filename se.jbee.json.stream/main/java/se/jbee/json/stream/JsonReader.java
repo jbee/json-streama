@@ -8,9 +8,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.Serializable;
+import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -70,9 +73,20 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     };
   }
 
+  static Serializable parse(String json) {
+    AtomicReference<Serializable> value = new AtomicReference<>();
+    StringReader in = new StringReader(json + ",");
+    new JsonReader(from(in), () -> json).readNodeDetect(value::set);
+    return value.get();
+  }
+
   /*
   API
    */
+
+  int readNodeDetect(Consumer<Serializable> setter) {
+    return readNodeDetect(setter, false);
+  }
 
   /**
    * A node value is:
@@ -97,7 +111,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
    * @return the next non whitespace code point in the stream after the value read. A caller needs
    *     to consider this to correctly continue processing the stream.
    */
-  int readNodeDetect(Consumer<Serializable> setter) {
+  int readNodeDetect(Consumer<Serializable> setter, boolean allowArrayClose) {
     int cp = readCharSkipWhitespace();
     switch (cp) {
       case '{':
@@ -123,6 +137,10 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
         break;
       case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
         return readNumber(cp, setter);
+      case ']':
+        if (allowArrayClose)
+          return ']';
+        // intentional fall-through
       default:
         throw formatException(cp, NODE_STARTING_CHARS);
     }
@@ -148,8 +166,10 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
   }
 
   /**
-   * Assumes the opening double-quotes has been consumed already. After this method the closing
-   * double-quotes is the most recent already consumed character.
+   * Assumes the opening double-quotes has been consumed already.
+   *
+   * After this method the closing
+   * double-quotes is the last already consumed character.
    *
    * @return the JSON string node as Java {@link String}
    */
@@ -273,20 +293,29 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
     int cp = ',';
     while (cp != ']') {
       if (cp != ',') throw formatException(cp, ',', ']');
-      cp = readNodeDetect(res::add);
+      cp = readNodeDetect(res::add, true);
     }
     return res;
   }
 
+  /**
+   * Assumes the opening { is already consumed.
+   *
+   * After the parsing rhe closing } is the last consumed character.
+   *
+   * @return map for the JSON object
+   */
   private LinkedHashMap<String, Serializable> readMap() {
     LinkedHashMap<String, Serializable> res = new LinkedHashMap<>();
-    int cp = ',';
+    int cp = readCharSkipWhitespace();
     while (cp != '}') {
-      if (cp != ',') throw formatException(cp, ',', '}');
-      readCharSkipWhitespace('"');
       String key = readString();
       readCharSkipWhitespace(':');
       cp = readNodeDetect(value -> res.put(key, value));
+      if (cp != ',' && cp != '}') throw formatException(cp, ',', '}');
+      if (cp == ',')
+        readCharSkipWhitespace('"');
+        // technically cp got not updated to latest " but we want compare , or } for loop condition
     }
     return res;
   }

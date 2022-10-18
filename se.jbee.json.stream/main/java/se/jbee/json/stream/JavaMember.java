@@ -10,11 +10,14 @@ import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_CONSUMER;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_ITERATOR;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_OBJECT;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_STREAM;
+import static se.jbee.json.stream.JavaMember.ProcessingType.RAW_VALUES;
 
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -39,6 +42,9 @@ import java.util.stream.Stream;
  *     key type or null if the method has no map collection type
  * @param hasDefaultParameter true in case the method represented by this member has a default
  *     argument to return in case the member is not present or given as JSON null
+ * @param isKeyProperty true, if the member returns the name of JSON object members (map key when JSON objects used as map)
+ * @param retainNull when true, JSON null or undefined (no such member) translates to Java {@code null} independent of any mapping settings
+ * @param jsonDefaultValue when non-null this is the Java equivalent of the JSON value provided via annotation that should be used in case the member is null or undefined in the JSON input. The JSON equivalent Java is mapped to target type as usual.
  */
 record JavaMember(
     ProcessingType processingType,
@@ -50,6 +56,8 @@ record JavaMember(
     Class<?> valueType,
     boolean hasDefaultParameter,
     boolean isKeyProperty,
+    boolean retainNull,
+    Object jsonDefaultValue,
     int minOccur,
     int maxOccur) {
 
@@ -95,14 +103,25 @@ record JavaMember(
      * JSON array or object consumed as Java {@link Consumer} of {@link Proxy} instances of a user
      * defined interface
      */
-    PROXY_CONSUMER;
+    PROXY_CONSUMER,
+    /**
+     * All simple JSON members are mapped to a {@link Map}
+     * where key is the member name {@link String}, and value is the Java equivalent type of the JSON value.
+     * Their common type is {@link java.io.Serializable}.
+     *
+     * These values are not mapped as there is no single Java target type.
+     *
+     * As this is not stream processed the operation is repeatable.
+     */
+    RAW_VALUES;
+    // also allow a second parameter for the JsonToJava mapping?
 
     boolean isStreaming() {
-      return this != MAPPED_VALUE && this != PROXY_OBJECT;
+      return isSuspending() && this != PROXY_OBJECT;
     }
 
     boolean isSuspending() {
-      return this != MAPPED_VALUE;
+      return this != MAPPED_VALUE && this != RAW_VALUES;
     }
 
     boolean isConsumer() {
@@ -119,7 +138,7 @@ record JavaMember(
   private static final Map<Class<?>, Map<String, JavaMember>> MEMBERS_BY_TYPE =
       new ConcurrentHashMap<>();
 
-  public static <T> Map<String, JavaMember> getMembersOfStreamType(Class<T> type) {
+  public static <T> Map<String, JavaMember> getMembersOf(Class<T> type) {
     if (!type.isInterface())
       throw new IllegalArgumentException(
           "Stream must be mapped to an interface returnType but got: " + type);
@@ -129,7 +148,7 @@ record JavaMember(
           Map<String, JavaMember> membersByJsonName = new HashMap<>();
           int n = 1;
           for (Method m : key.getMethods()) {
-            if (isUsualMember(m)) {
+            if (isJsonMappedMember(m)) {
               String jsonName = JavaMember.computeJsonName(m);
               int index =
                   membersByJsonName.containsKey(jsonName)
@@ -146,18 +165,46 @@ record JavaMember(
         });
   }
 
-  private static boolean isUsualMember(Method m) {
+  private static boolean isJsonMappedMember(Method m) {
+    int pc = m.getParameterCount();
+    Class<?> rt = m.getReturnType();
     return !m.isDefault()
         && !m.isSynthetic()
         && !Modifier.isStatic(m.getModifiers())
-        && !m.getName().equals("skip");
+        && !m.getName().equals("skip")
+        && (pc == 0 && rt != void.class
+          || pc == 1 && rt != void.class && m.getGenericParameterTypes()[0].equals(m.getGenericReturnType())
+          || pc == 1 && rt == void.class && m.getParameterTypes()[0] == Consumer.class);
+  }
+
+  public static JavaMember newRootMember(
+      ProcessingType processingType, Class<?> returnType, Class<?> valueType) {
+    return new JavaMember(
+        processingType,
+        "",
+        1,
+        returnType,
+        null,
+        null,
+        valueType,
+        false,
+        false,
+        false,
+        "",
+        0,
+        Integer.MAX_VALUE);
   }
 
   public static JavaMember newMember(Method m, int index) {
-    ProcessingType processingType = memberType(m);
+    ProcessingType processingType = detectProcessingType(m);
     Class<?> collectionType = computeCollectionType(m, processingType);
     boolean isKeyProperty = computeIsKeyProperty(m);
     Class<?> valueType = computeValueType(m, processingType);
+    JsonProperty property = m.getAnnotation(JsonProperty.class);
+    Object jsonDefaultValue = null;
+    if (property != null && !property.defaultValue().isEmpty()) {
+      jsonDefaultValue = JsonReader.parse(property.defaultValue());
+    }
     return new JavaMember(
         processingType,
         computeJsonName(m),
@@ -168,6 +215,8 @@ record JavaMember(
         valueType,
         computeHasDefaultParameter(m, processingType),
         isKeyProperty,
+        processingType == RAW_VALUES || property != null && property.retainNull(),
+        jsonDefaultValue,
         computeMinOccur(m),
         computeMaxOccur(m));
   }
@@ -192,7 +241,7 @@ record JavaMember(
     return keyType == null ? null : toJava.mapTo(keyType);
   }
 
-  private static ProcessingType memberType(Method m) {
+  private static ProcessingType detectProcessingType(Method m) {
     Class<?> as = m.getReturnType();
     if (as == Stream.class)
       return isProxyInterface(actualGenericRawType(m.getGenericReturnType(), 0))
@@ -208,6 +257,13 @@ record JavaMember(
       return isProxyInterface(actualGenericRawType(m.getGenericParameterTypes()[0], 0))
           ? PROXY_CONSUMER
           : MAPPED_CONSUMER;
+    if (as == Map.class) {
+      Type entry = m.getGenericReturnType();
+      if (actualGenericRawType(entry, 0) == String.class
+          && actualGenericRawType(entry, 1) == Serializable.class)
+        return RAW_VALUES;
+      return MAPPED_VALUE;
+    }
     return isProxyInterface(as) ? PROXY_OBJECT : MAPPED_VALUE;
   }
 
@@ -234,6 +290,7 @@ record JavaMember(
 
   private static Class<?> computeValueType(Method m, ProcessingType processingType) {
     return switch (processingType) {
+      case RAW_VALUES -> Serializable.class;
       case PROXY_OBJECT -> m.getReturnType();
       case MAPPED_VALUE -> valueTypeSimple(m.getGenericReturnType());
       case PROXY_CONSUMER -> actualGenericRawType(m.getGenericParameterTypes()[0], 0);

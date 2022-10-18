@@ -1,5 +1,6 @@
 package se.jbee.json.stream;
 
+import static java.lang.String.format;
 import static java.util.Collections.emptyIterator;
 import static java.util.function.Function.identity;
 
@@ -28,8 +29,9 @@ import java.util.stream.Stream;
  *
  * The {@link JsonToJava} is the mapping configuration of converters used to perform the 2nd step.
  *
- * <p>A {@link Factory} is used to automatically fill in mappings that have not benn made explicitly
- * ahead of time.
+ * <p>A {@link Factory} is used to automatically fill in mappings that have not been made explicitly
+ * ahead of time. For example, to be able to map to any {@link Enum} value a {@link Factory} creates
+ * the mapping {@link Function}s on demand.
  */
 @FunctionalInterface
 public interface JsonToJava {
@@ -70,6 +72,10 @@ public interface JsonToJava {
   JsonToJava DEFAULT =
       ROOT.with(Serializable.class, null, identity())
           .with(String.class, null, identity(), Objects::toString, Objects::toString)
+          .with(
+              Character.class, null, s -> s.charAt(0), n -> (char) n.intValue(), b -> b ? 't' : 'f')
+          .with(
+              char.class, (char) 0, s -> s.charAt(0), n -> (char) n.intValue(), b -> b ? 't' : 'f')
           .with(Number.class, null, JsonReader::parseNumber, identity(), b -> b ? 1 : 0)
           .with(Integer.class, null, Integer::valueOf, Number::intValue, b -> b ? 1 : 0)
           .with(int.class, 0, Integer::valueOf, Number::intValue, b -> b ? 1 : 0)
@@ -217,7 +223,7 @@ public interface JsonToJava {
     private static <A, B> Function<A, B> mapAndThrow(Class<A> from, Class<B> to) {
       return json -> {
         throw new UnsupportedOperationException(
-            String.format(
+            format(
                 "Unknown conversion from value `%s` (%s) to %s",
                 json, from.getSimpleName(), to.getSimpleName()));
       };
@@ -231,11 +237,17 @@ public interface JsonToJava {
           try {
             return c.newInstance(value);
           } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new JsonMappingException(
+                format(
+                    "Failed to create instance value of type %s from input: %s",
+                    to.getName(), value),
+                e);
           }
         };
       } catch (NoSuchMethodException e) {
         // TODO factory method?
+        // TODO make thos composeable with a orElse() ? so one can chain:
+        // mapToNewInstance.orElse(mapToFactoryMethod).orElse(mapAndThrow)
         return UNSUPPORTED.create(from, to);
       }
     }

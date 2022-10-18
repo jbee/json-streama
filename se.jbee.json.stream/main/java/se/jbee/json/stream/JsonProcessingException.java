@@ -15,4 +15,8 @@ public abstract class JsonProcessingException extends IllegalArgumentException {
   protected JsonProcessingException(String s) {
     super(s);
   }
+
+  protected JsonProcessingException(String message, Exception cause) {
+    super(message, cause);
+  }
 }
