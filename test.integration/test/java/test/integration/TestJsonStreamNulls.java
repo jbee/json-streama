@@ -59,7 +59,8 @@ class TestJsonStreamNulls {
   }
 
   /**
-   * Undefined or JSON null in the input translates to Java {@code null} because of {@link JsonProperty#retainNull()} which has higher precedence than any mapping
+   * Undefined or JSON null in the input translates to Java {@code null} because of {@link
+   * JsonProperty#retainNull()} which has higher precedence than any mapping
    */
   interface CollectionNullRoot {
     @JsonProperty(retainNull = true)
@@ -76,16 +77,19 @@ class TestJsonStreamNulls {
   }
 
   /**
-   * Undefined or JSON null in the input translates to the annotated {@link JsonProperty#defaultValue()}
+   * Undefined or JSON null in the input translates to the annotated {@link
+   * JsonProperty#defaultValue()}
    */
   interface CollectionDefaultValueRoot {
     @JsonProperty(defaultValue = "[]")
     List<String> list();
 
-    @JsonProperty(defaultValue = "[1,2,3]")
+    @JsonProperty(defaultValue = "[1, 2,\t  3]")
     Set<Integer> set();
 
-    @JsonProperty(defaultValue = "[\"a\",\"b\",\"c\"]")
+    @JsonProperty(defaultValue = """
+["a","b","c"]
+""")
     Collection<String> collection();
 
     @JsonProperty(defaultValue = "{\"a\":\"b\"}")
@@ -281,7 +285,7 @@ class TestJsonStreamNulls {
         """;
     CollectionDefaultValueRoot root = ofRoot(CollectionDefaultValueRoot.class, asJsonInput(json));
     assertEquals(List.of(), root.list());
-    assertEquals(Set.of(1,2,3), root.set());
+    assertEquals(Set.of(1, 2, 3), root.set());
     assertEquals(List.of("a", "b", "c"), root.collection());
     assertEquals(Map.of("a", "b"), root.map());
   }

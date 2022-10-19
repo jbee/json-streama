@@ -26,23 +26,28 @@ public @interface JsonProperty {
    * By default, when the annotated member is either undefined or defined JSON null in the input
    * {@link JsonToJava.JsonTo#mapNull()} for the target type is used.
    *
-   * {@code retainNull} takes precedence over {@link JsonToJava.JsonTo#mapNull()} but is ignored when {@link #defaultValue()} is specified.
+   * <p>{@code retainNull} takes precedence over {@link JsonToJava.JsonTo#mapNull()} but is ignored
+   * when {@link #defaultValue()} is specified.
    *
-   * @return  If true, this member becomes Java {@code null} when undefined or defined JSON null in the input
+   * @return If true, this member becomes Java {@code null} when undefined or defined JSON null in
+   *     the input
    */
   boolean retainNull() default false;
 
   /**
-   * The JSON input to assume when no input is provided for this member making it its effective default value.
+   * The JSON input to assume when no input is provided for this member making it its effective
+   * default value.
    *
-   * {@code defaultValue} takes precedence over {@link #retainNull()} and {@link JsonToJava.JsonTo#mapNull()}.
+   * <p>{@code defaultValue} takes precedence over {@link #retainNull()} and {@link
+   * JsonToJava.JsonTo#mapNull()}.
    *
-   * @return when specified the provided JSON is assumed when this member is undefined or defined JSON null in the input.
+   * @return when specified the provided JSON is assumed when this member is undefined or defined
+   *     JSON null in the input.
    */
   String defaultValue() default "";
 
   /*
-  Validation
+  Constraints
    */
 
   boolean required() default false;
@@ -51,18 +56,47 @@ public @interface JsonProperty {
 
   int maxOccur() default Integer.MAX_VALUE;
 
-  // int maxLength(); // for strings (number of chars) and numbers (number of digits)
-
-  // int maxDepth() default 1; // also analysis of type Map<?, Map<?,?> would be 2
-
-  // int maxSize(); // for collection level
-
-  enum JsonType { STRING, NUMBER, BOOLEAN, ARRAY, OBJECT }
+  /** @return maximum number of chars in a string or maximum number of digits in a number */
+  int maxLength() default -1;
 
   /**
-   * An empty set is same as accepting all the types.
+   * Examples:
    *
-   * @return the set of JSON value types that is accepted as valid input and as such tried to be mapped to the Java target type
+   * <ol>
+   *   <li>-1 : automatically determined based on the annotated return type
+   *   <li>0 : no nesting (simple values)
+   *   <li>1 : 1 level of nesting, for example an array or object with simple values
+   *   <li>2 : 2 levels of nesting, for example for a {@code List<List<String>>}
+   * </ol>
+   *
+   * @return number of nesting levels a value may have.
+   */
+  int maxDepth() default -1; // also analysis of type Map<?, Map<?,?> would be 2
+
+  /**
+   * This is the same as {@link #maxOccur()} in case the annotated return type is not a stream
+   * processed type but a directly mapped collection.
+   *
+   * @return maximum number elements in a collection
+   */
+  int maxSize() default -1;
+
+  enum JsonType {
+    STRING,
+    NUMBER,
+    BOOLEAN,
+    ARRAY,
+    OBJECT
+  }
+
+  /**
+   * An empty set means the set is determined based on the Java target type of the annotated method.
+   * For most part this is equivalent to accepting all types but for simple types like {@link
+   * String}, {@link Number}s or {@link Boolean} complex types {@link JsonType#ARRAY} and {@link
+   * JsonType#OBJECT} are excluded.
+   *
+   * @return the set of JSON value types that is accepted as valid input and as such tried to be
+   *     mapped to the Java target type
    */
   JsonType[] accept() default {};
 }

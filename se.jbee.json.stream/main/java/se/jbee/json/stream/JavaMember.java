@@ -18,48 +18,71 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
+import java.lang.reflect.WildcardType;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
+import se.jbee.json.stream.JsonProperty.JsonType;
 
 /**
  * Holds the "meta" information on a member {@link Method} which represents the Java side (target)
  * of a JSON object member (source).
  *
- * @param processingType how the JSON input is processed/mapped to Java
- * @param jsonName how the member is called in the JSON input
  * @param index index of this member within a frame starting with 1 as lowest index. All methods
  *     targeting the same JSON input member share the same index
- * @param returnType raw method return type
- * @param collectionType Java type of a Java collection if it is the stream element or return type
- *     or null if the method has no collection type
- * @param valueType Java type simple JSON values in a stream or collection are converted to
- * @param keyType Java type used when a JSON object member jsonName is mapped to a Java {@link Map}
- *     key type or null if the method has no map collection type
- * @param hasDefaultParameter true in case the method represented by this member has a default
- *     argument to return in case the member is not present or given as JSON null
- * @param isKeyProperty true, if the member returns the name of JSON object members (map key when JSON objects used as map)
- * @param retainNull when true, JSON null or undefined (no such member) translates to Java {@code null} independent of any mapping settings
- * @param jsonDefaultValue when non-null this is the Java equivalent of the JSON value provided via annotation that should be used in case the member is null or undefined in the JSON input. The JSON equivalent Java is mapped to target type as usual.
+ * @param jsonName how the member is called in the JSON input
+ * @param isKeyProperty true, if the member returns the name of JSON object members (map key when
+ *     JSON objects used as map)
+ * @param processingType how the JSON input is processed/mapped to Java
  */
 record JavaMember(
-    ProcessingType processingType,
-    String jsonName,
     int index,
-    Class<?> returnType,
-    Class<?> collectionType,
-    Class<?> keyType,
-    Class<?> valueType,
-    boolean hasDefaultParameter,
+    String jsonName,
     boolean isKeyProperty,
-    boolean retainNull,
-    Object jsonDefaultValue,
-    int minOccur,
-    int maxOccur) {
+    ProcessingType processingType,
+    Types types,
+    Nulls nulls,
+    Constraints constraints) {
+
+  /**
+   * @param returnType raw method return type
+   * @param collectionType Java type of a Java collection if it is the stream element or return type
+   *     or null if the method has no collection type
+   * @param keyType Java type used when a JSON object member jsonName is mapped to a Java {@link
+   *     Map} key type or null if the method has no map collection type
+   * @param valueType Java type simple JSON values in a stream or collection are converted to
+   */
+  record Types(
+      Class<?> returnType, Class<?> collectionType, Class<?> keyType, Class<?> valueType) {}
+
+  /**
+   * @param retainNull when true, JSON null or undefined (no such member) translates to Java {@code
+   *     null} independent of any mapping settings
+   * @param hasDefaultParameter true in case the method represented by this member has a default
+   *     argument to return in case the member is not present or given as JSON null
+   * @param jsonDefaultValue when non-null this is the Java equivalent of the JSON value provided
+   *     via annotation that should be used in case the member is null or undefined in the JSON
+   *     input. The JSON equivalent Java is mapped to target type as usual.
+   */
+  record Nulls(boolean retainNull, boolean hasDefaultParameter, Object jsonDefaultValue) {
+    static final Nulls ROOT = new Nulls(false, false, "");
+  }
+
+  record Constraints(
+      int minOccur,
+      int maxOccur,
+      int maxDepth,
+      int maxSize,
+      int maxLength,
+      EnumSet<JsonType> accept) {
+    static final Constraints ROOT =
+        new Constraints(0, Integer.MAX_VALUE, 0, 0, 0, EnumSet.of(JsonType.ARRAY, JsonType.OBJECT));
+  }
 
   /**
    * Based on the type information extracted from user defined target interfaces each object member
@@ -105,13 +128,13 @@ record JavaMember(
      */
     PROXY_CONSUMER,
     /**
-     * All simple JSON members are mapped to a {@link Map}
-     * where key is the member name {@link String}, and value is the Java equivalent type of the JSON value.
-     * Their common type is {@link java.io.Serializable}.
+     * All simple JSON members are mapped to a {@link Map} where key is the member name {@link
+     * String}, and value is the Java equivalent type of the JSON value. Their common type is {@code
+     * ?}.
      *
-     * These values are not mapped as there is no single Java target type.
+     * <p>These values are not mapped as there is no single Java target type.
      *
-     * As this is not stream processed the operation is repeatable.
+     * <p>As this is not stream processed the operation is repeatable.
      */
     RAW_VALUES;
     // also allow a second parameter for the JsonToJava mapping?
@@ -173,26 +196,16 @@ record JavaMember(
         && !Modifier.isStatic(m.getModifiers())
         && !m.getName().equals("skip")
         && (pc == 0 && rt != void.class
-          || pc == 1 && rt != void.class && m.getGenericParameterTypes()[0].equals(m.getGenericReturnType())
-          || pc == 1 && rt == void.class && m.getParameterTypes()[0] == Consumer.class);
+            || pc == 1
+                && rt != void.class
+                && m.getGenericParameterTypes()[0].equals(m.getGenericReturnType())
+            || pc == 1 && rt == void.class && m.getParameterTypes()[0] == Consumer.class);
   }
 
   public static JavaMember newRootMember(
       ProcessingType processingType, Class<?> returnType, Class<?> valueType) {
-    return new JavaMember(
-        processingType,
-        "",
-        1,
-        returnType,
-        null,
-        null,
-        valueType,
-        false,
-        false,
-        false,
-        "",
-        0,
-        Integer.MAX_VALUE);
+    Types types = new Types(returnType, null, null, valueType);
+    return new JavaMember(1, "", false, processingType, types, Nulls.ROOT, Constraints.ROOT);
   }
 
   public static JavaMember newMember(Method m, int index) {
@@ -203,22 +216,18 @@ record JavaMember(
     JsonProperty property = m.getAnnotation(JsonProperty.class);
     Object jsonDefaultValue = null;
     if (property != null && !property.defaultValue().isEmpty()) {
-      jsonDefaultValue = JsonReader.parse(property.defaultValue());
+      jsonDefaultValue = JsonParser.parse(property.defaultValue());
     }
+    boolean retainNull = processingType == RAW_VALUES || property != null && property.retainNull();
     return new JavaMember(
-        processingType,
-        computeJsonName(m),
         isKeyProperty ? 0 : index,
-        m.getReturnType(),
-        collectionType,
-        computeKeyType(m, processingType),
-        valueType,
-        computeHasDefaultParameter(m, processingType),
+        computeJsonName(m),
         isKeyProperty,
-        processingType == RAW_VALUES || property != null && property.retainNull(),
-        jsonDefaultValue,
-        computeMinOccur(m),
-        computeMaxOccur(m));
+        processingType,
+        new Types(m.getReturnType(), collectionType, computeKeyType(m, processingType), valueType),
+        new Nulls(retainNull, computeHasDefaultParameter(m, processingType), jsonDefaultValue),
+        new Constraints(
+            computeMinOccur(m), computeMaxOccur(m), 1, 128, 256, EnumSet.allOf(JsonType.class)));
   }
 
   public static JavaMember getMember(Method method) {
@@ -230,15 +239,15 @@ record JavaMember(
   }
 
   public Class<?> nullValueType() {
-    return collectionType != null ? collectionType : valueType;
+    return types.collectionType != null ? types.collectionType : types.valueType;
   }
 
   public JsonToJava.JsonTo<?> jsonToValueType(JsonToJava toJava) {
-    return valueType == null ? null : toJava.mapTo(valueType);
+    return types.valueType == null ? null : toJava.mapTo(types.valueType);
   }
 
   public JsonToJava.JsonTo<?> jsonToKeyType(JsonToJava toJava) {
-    return keyType == null ? null : toJava.mapTo(keyType);
+    return types.keyType == null ? null : toJava.mapTo(types.keyType);
   }
 
   private static ProcessingType detectProcessingType(Method m) {
@@ -260,8 +269,7 @@ record JavaMember(
     if (as == Map.class) {
       Type entry = m.getGenericReturnType();
       if (actualGenericRawType(entry, 0) == String.class
-          && actualGenericRawType(entry, 1) == Serializable.class)
-        return RAW_VALUES;
+          && actualGenericType(entry, 1) instanceof WildcardType) return RAW_VALUES;
       return MAPPED_VALUE;
     }
     return isProxyInterface(as) ? PROXY_OBJECT : MAPPED_VALUE;

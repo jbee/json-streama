@@ -12,7 +12,6 @@ import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
@@ -42,7 +41,7 @@ import java.util.function.Supplier;
  * @author Jan Bernitt
  * @since 1.0
  */
-record JsonReader(IntSupplier read, Supplier<String> printPosition) {
+record JsonParser(IntSupplier read, Supplier<String> printPosition) {
 
   private static final char[] NODE_STARTING_CHARS = {
     '{', // object
@@ -76,7 +75,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
   static Serializable parse(String json) {
     AtomicReference<Serializable> value = new AtomicReference<>();
     StringReader in = new StringReader(json + ",");
-    new JsonReader(from(in), () -> json).readNodeDetect(value::set);
+    new JsonParser(from(in), () -> json).readNodeDetect(value::set);
     return value.get();
   }
 
@@ -138,8 +137,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
         return readNumber(cp, setter);
       case ']':
-        if (allowArrayClose)
-          return ']';
+        if (allowArrayClose) return ']';
         // intentional fall-through
       default:
         throw formatException(cp, NODE_STARTING_CHARS);
@@ -168,8 +166,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
   /**
    * Assumes the opening double-quotes has been consumed already.
    *
-   * After this method the closing
-   * double-quotes is the last already consumed character.
+   * <p>After this method the closing double-quotes is the last already consumed character.
    *
    * @return the JSON string node as Java {@link String}
    */
@@ -301,7 +298,7 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
   /**
    * Assumes the opening { is already consumed.
    *
-   * After the parsing rhe closing } is the last consumed character.
+   * <p>After the parsing rhe closing } is the last consumed character.
    *
    * @return map for the JSON object
    */
@@ -313,9 +310,8 @@ record JsonReader(IntSupplier read, Supplier<String> printPosition) {
       readCharSkipWhitespace(':');
       cp = readNodeDetect(value -> res.put(key, value));
       if (cp != ',' && cp != '}') throw formatException(cp, ',', '}');
-      if (cp == ',')
-        readCharSkipWhitespace('"');
-        // technically cp got not updated to latest " but we want compare , or } for loop condition
+      if (cp == ',') readCharSkipWhitespace('"');
+      // technically cp got not updated to latest " but we want compare , or } for loop condition
     }
     return res;
   }

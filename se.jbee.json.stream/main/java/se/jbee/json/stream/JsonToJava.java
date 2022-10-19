@@ -76,7 +76,7 @@ public interface JsonToJava {
               Character.class, null, s -> s.charAt(0), n -> (char) n.intValue(), b -> b ? 't' : 'f')
           .with(
               char.class, (char) 0, s -> s.charAt(0), n -> (char) n.intValue(), b -> b ? 't' : 'f')
-          .with(Number.class, null, JsonReader::parseNumber, identity(), b -> b ? 1 : 0)
+          .with(Number.class, null, JsonParser::parseNumber, identity(), b -> b ? 1 : 0)
           .with(Integer.class, null, Integer::valueOf, Number::intValue, b -> b ? 1 : 0)
           .with(int.class, 0, Integer::valueOf, Number::intValue, b -> b ? 1 : 0)
           .with(Long.class, null, Long::valueOf, Number::longValue, b -> b ? 1L : 0L)
