@@ -11,6 +11,8 @@ import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_ITERATOR;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_OBJECT;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_STREAM;
 import static se.jbee.json.stream.JavaMember.ProcessingType.RAW_VALUES;
+import static se.jbee.json.stream.JsonSchemaException.maxOccurExceeded;
+import static se.jbee.json.stream.JsonSchemaException.minOccurNotReached;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -57,8 +59,12 @@ record JavaMember(
    *     Map} key type or null if the method has no map collection type
    * @param valueType Java type simple JSON values in a stream or collection are converted to
    */
-  record Types(
-      Class<?> returnType, Class<?> collectionType, Class<?> keyType, Class<?> valueType) {}
+  record Types(Class<?> returnType, Class<?> collectionType, Class<?> keyType, Class<?> valueType) {
+
+    Class<?> nullValueType() {
+      return collectionType != null ? collectionType : valueType;
+    }
+  }
 
   /**
    * @param retainNull when true, JSON null or undefined (no such member) translates to Java {@code
@@ -137,7 +143,6 @@ record JavaMember(
      * <p>As this is not stream processed the operation is repeatable.
      */
     RAW_VALUES;
-    // also allow a second parameter for the JsonToJava mapping?
 
     boolean isStreaming() {
       return isSuspending() && this != PROXY_OBJECT;
@@ -238,16 +243,22 @@ record JavaMember(
     return processingType.isConsumer() ? 1 : 0;
   }
 
-  public Class<?> nullValueType() {
-    return types.collectionType != null ? types.collectionType : types.valueType;
-  }
-
   public JsonToJava.JsonTo<?> jsonToValueType(JsonToJava toJava) {
     return types.valueType == null ? null : toJava.mapTo(types.valueType);
   }
 
   public JsonToJava.JsonTo<?> jsonToKeyType(JsonToJava toJava) {
     return types.keyType == null ? null : toJava.mapTo(types.keyType);
+  }
+
+  public void checkConstraintMaxOccur(int occur) {
+    int maxOccur = constraints().maxOccur();
+    if (occur > maxOccur) throw maxOccurExceeded(types().valueType(), maxOccur);
+  }
+
+  public void checkConstraintMinOccur(int occur) {
+    int minOccur = constraints().minOccur();
+    if (occur < minOccur) throw minOccurNotReached(types().valueType(), minOccur, occur);
   }
 
   private static ProcessingType detectProcessingType(Method m) {

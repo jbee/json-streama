@@ -27,7 +27,7 @@ import java.util.stream.Stream;
  *       interface
  * </ol>
  *
- * The {@link JsonToJava} is the mapping configuration of converters used to perform the 2nd step.
+ * The {@link JsonToJava} is the mapping configuration used to perform the 2nd step.
  *
  * <p>A {@link Factory} is used to automatically fill in mappings that have not been made explicitly
  * ahead of time. For example, to be able to map to any {@link Enum} value a {@link Factory} creates
@@ -230,6 +230,7 @@ public interface JsonToJava {
     }
 
     private static <A, B> Function<A, B> mapToNewInstance(Class<A> from, Class<B> to) {
+      if (to.isInterface()) return UNSUPPORTED.create(from, to);
       if (to.isEnum()) return mapToEnum(from, to);
       try {
         Constructor<B> c = to.getConstructor(from);

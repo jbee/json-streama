@@ -19,9 +19,12 @@ import se.jbee.json.stream.JsonStream;
  */
 class TestJsonStreamFeatureRestrictions {
 
-  interface Root {
+  interface ProxyStreamRoot {
     @JsonProperty(maxOccur = 3)
     Stream<Element> max3();
+
+    @JsonProperty(minOccur = 2)
+    Stream<Element> min2();
   }
 
   interface Element {
@@ -29,29 +32,91 @@ class TestJsonStreamFeatureRestrictions {
   }
 
   @Test
-  void maxOccur_UpToLimitCanOccur() {
+  void maxOccur_ProxyStream_UpToLimitCanOccur() {
     String json = // language=JSON
         """
         {
           "max3": [{"name": "A"}, {"name": "B"}, {"name": "C"}]
         }""";
 
-    Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
     assertEquals(List.of("A", "B", "C"), root.max3().map(Element::name).toList());
   }
 
   @Test
-  void maxOccur_TooManyItemsThrowsException() {
+  void maxOccur_ProxyStream_TooManyItemsThrowsException() {
     String json = // language=JSON
         """
         {
           "max3": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]
         }""";
 
-    Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
     Stream<Element> max3 = root.max3();
     JsonSchemaException ex =
         assertThrows(JsonSchemaException.class, () -> max3.forEach(Element::name));
     assertEquals("Maximum expected number of Element items is 3.", ex.getMessage());
   }
+
+  @Test
+  void minOccur_ProxyStream_LimitCanOccur() {
+    String json = // language=JSON
+        """
+        {
+          "min2": [{"name": "A"}, {"name": "B"}]
+        }""";
+
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    assertEquals(List.of("A", "B"), root.min2().map(Element::name).toList());
+  }
+
+  @Test
+  void minOccur_ProxyStream_TooLittleItemsThrowsException() {
+    String json = // language=JSON
+        """
+        {
+          "min2": [{"name": "A"}]
+        }""";
+
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    Stream<Element> min2 = root.min2();
+    JsonSchemaException ex =
+        assertThrows(JsonSchemaException.class, () -> min2.forEach(Element::name));
+    assertEquals(
+        "Minimum expected number of Element items is 2 but only found 1.", ex.getMessage());
+  }
+
+  @Test
+  void minOccur_ProxyStream_NullThrowsException() {
+    String json = // language=JSON
+        """
+        {
+          "min2": null
+        }""";
+
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    // note that for null the exception occurs when accessing the member
+    // whereas too little elements are found once the stream is processed
+    JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);
+    assertEquals(
+        "Minimum expected number of Element items is 2 but only found 0.", ex.getMessage());
+  }
+
+  @Test
+  void minOccur_ProxyStream_UndefinedThrowsException() {
+    String json = // language=JSON
+        """
+        {}""";
+
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    // note that for null the exception occurs when accessing the member
+    // whereas too little elements are found once the stream is processed
+    JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);
+    assertEquals(
+        "Minimum expected number of Element items is 2 but only found 0.", ex.getMessage());
+  }
+
+  // TODO
+  // - stream null => min occur
+  // min/max occur collections
 }
