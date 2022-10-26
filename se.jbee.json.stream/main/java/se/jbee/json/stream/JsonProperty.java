@@ -26,19 +26,19 @@ public @interface JsonProperty {
    * By default, when the annotated member is either undefined or defined JSON null in the input
    * {@link JsonToJava.JsonTo#mapNull()} for the target type is used.
    *
-   * <p>{@code retainNull} takes precedence over {@link JsonToJava.JsonTo#mapNull()} but is ignored
+   * <p>{@code retainNulls} takes precedence over {@link JsonToJava.JsonTo#mapNull()} but is ignored
    * when {@link #defaultValue()} is specified.
    *
    * @return If true, this member becomes Java {@code null} when undefined or defined JSON null in
    *     the input
    */
-  boolean retainNull() default false;
+  boolean retainNulls() default false;
 
   /**
    * The JSON input to assume when no input is provided for this member making it its effective
    * default value.
    *
-   * <p>{@code defaultValue} takes precedence over {@link #retainNull()} and {@link
+   * <p>{@code defaultValue} takes precedence over {@link #retainNulls()} and {@link
    * JsonToJava.JsonTo#mapNull()}.
    *
    * @return when specified the provided JSON is assumed when this member is undefined or defined

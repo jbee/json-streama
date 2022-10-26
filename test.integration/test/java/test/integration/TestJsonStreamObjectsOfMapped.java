@@ -2,7 +2,6 @@ package test.integration;
 
 import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
 
 import java.lang.annotation.RetentionPolicy;
 import java.util.AbstractMap.SimpleEntry;
@@ -13,6 +12,7 @@ import java.util.Map.Entry;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 /**
@@ -33,7 +33,7 @@ class TestJsonStreamObjectsOfMapped {
       Stream<Entry<String, Integer>> values();
     }
 
-    Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
+    Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));
     assertEquals(
         List.of(entry("a", 1), entry("b", 2), entry("c", 3)), root.values().collect(toList()));
   }
@@ -50,7 +50,7 @@ class TestJsonStreamObjectsOfMapped {
       Iterator<Entry<Integer, String>> values();
     }
 
-    Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
+    Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));
     var actual = new ArrayList<>();
     root.values().forEachRemaining(actual::add);
     assertEquals(List.of(entry(1, "a"), entry(2, "b"), entry(3, "c")), actual);
@@ -68,7 +68,7 @@ class TestJsonStreamObjectsOfMapped {
       void values(Consumer<Entry<RetentionPolicy, Boolean>> forEach);
     }
 
-    Root root = JsonStream.ofRoot(Root.class, asJsonInput(json));
+    Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));
     var actual = new ArrayList<>();
     root.values(actual::add);
     assertEquals(

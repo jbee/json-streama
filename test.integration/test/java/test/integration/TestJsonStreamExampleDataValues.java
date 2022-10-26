@@ -1,12 +1,12 @@
 package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 class TestJsonStreamExampleDataValues {
@@ -82,7 +82,7 @@ class TestJsonStreamExampleDataValues {
 
   @Test
   void testDataValueSetImport() {
-    DataValueSet set = JsonStream.ofRoot(DataValueSet.class, asJsonInput(JSON));
+    DataValueSet set = JsonStream.ofRoot(DataValueSet.class, JsonInputStream.of(JSON));
 
     assertEquals("dataSetID", set.dataSet());
     assertEquals("orgUnitID", set.orgUnit());

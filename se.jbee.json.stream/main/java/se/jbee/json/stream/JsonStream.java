@@ -7,8 +7,6 @@ import static java.util.stream.Collectors.toSet;
 import static se.jbee.json.stream.JavaMember.ProcessingType.*;
 import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
 
-import java.io.InputStream;
-import java.io.Reader;
 import java.io.Serializable;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -31,7 +29,6 @@ import java.util.Set;
 import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
-import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -67,9 +64,9 @@ public final class JsonStream implements InvocationHandler {
    */
   public interface Factory {
 
-    <T> T ofRoot(Class<T> objType, IntSupplier in);
+    <T> T ofRoot(Class<T> objType, JsonInputStream in);
 
-    <T> Stream<T> of(Class<T> streamType, IntSupplier in);
+    <T> Stream<T> of(Class<T> streamType, JsonInputStream in);
   }
 
   public static Factory fromFactory(JsonToJava mapping) {
@@ -78,28 +75,20 @@ public final class JsonStream implements InvocationHandler {
         : new CachingFactory(mapping, new ConcurrentHashMap<>());
   }
 
-  public static <T> T ofRoot(Class<T> objType, IntSupplier in) {
+  public static <T> T ofRoot(Class<T> objType, JsonInputStream in) {
     return ofRoot(objType, in, JsonToJava.DEFAULT);
   }
 
-  public static <T> T ofRoot(Class<T> objType, IntSupplier in, JsonToJava mapping) {
+  public static <T> T ofRoot(Class<T> objType, JsonInputStream in, JsonToJava mapping) {
     return ofRoot(objType, in, mapping, new IdentityHashMap<>());
   }
 
-  public static <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
+  public static <T> Stream<T> of(Class<T> streamType, JsonInputStream in) {
     return of(streamType, in, JsonToJava.DEFAULT);
   }
 
-  public static <T> Stream<T> of(Class<T> streamType, IntSupplier in, JsonToJava mapping) {
+  public static <T> Stream<T> of(Class<T> streamType, JsonInputStream in, JsonToJava mapping) {
     return of(streamType, in, mapping, new IdentityHashMap<>());
-  }
-
-  public static IntSupplier asIntSupplier(InputStream in) {
-    return JsonParser.from(in);
-  }
-
-  public static IntSupplier asIntSupplier(Reader in) {
-    return JsonParser.from(in);
   }
 
   /*
@@ -115,19 +104,19 @@ public final class JsonStream implements InvocationHandler {
   private record CachingFactory(JsonToJava mapping, Map<JavaMember, ProxyInfo> cache)
       implements Factory {
     @Override
-    public <T> T ofRoot(Class<T> objType, IntSupplier in) {
+    public <T> T ofRoot(Class<T> objType, JsonInputStream in) {
       return JsonStream.ofRoot(objType, in, mapping, cache);
     }
 
     @Override
-    public <T> Stream<T> of(Class<T> streamType, IntSupplier in) {
+    public <T> Stream<T> of(Class<T> streamType, JsonInputStream in) {
       return JsonStream.of(streamType, in, mapping, cache);
     }
   }
 
   @SuppressWarnings("unchecked")
   private static <T> T ofRoot(
-      Class<T> objType, IntSupplier in, JsonToJava mapping, Map<JavaMember, ProxyInfo> cache) {
+      Class<T> objType, JsonInputStream in, JsonToJava mapping, Map<JavaMember, ProxyInfo> cache) {
     JsonStream handler = new JsonStream(in, mapping, cache);
     JavaMember root = JavaMember.newRootMember(PROXY_OBJECT, objType, objType);
     JsonFrame top = handler.pushFrame(root);
@@ -135,7 +124,10 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private static <T> Stream<T> of(
-      Class<T> streamType, IntSupplier in, JsonToJava mapping, Map<JavaMember, ProxyInfo> cache) {
+      Class<T> streamType,
+      JsonInputStream in,
+      JsonToJava mapping,
+      Map<JavaMember, ProxyInfo> cache) {
     JavaMember member = JavaMember.newRootMember(PROXY_STREAM, Stream.class, streamType);
     JsonStream handler = new JsonStream(in, mapping, cache);
     @SuppressWarnings("unchecked")
@@ -154,7 +146,7 @@ public final class JsonStream implements InvocationHandler {
 
   private final Map<JavaMember, ProxyInfo> cache;
 
-  private JsonStream(IntSupplier in, JsonToJava mapping, Map<JavaMember, ProxyInfo> cache) {
+  private JsonStream(JsonInputStream in, JsonToJava mapping, Map<JavaMember, ProxyInfo> cache) {
     this.in = new JsonParser(in, this::toString);
     this.mapping = mapping;
     this.cache = cache;
@@ -474,7 +466,7 @@ public final class JsonStream implements InvocationHandler {
     frame.mappedStreamItemIndex = -1;
     return new Iterator<>() {
       final JsonTo<?> key2Java = frame.info.getJsonToKey(member);
-      int cp = ','; // [ already consumed, pretend using ','
+      int cp = ',';
 
       @Override
       public boolean hasNext() {
@@ -620,9 +612,9 @@ public final class JsonStream implements InvocationHandler {
       JsonTo<?> nullToJava = mapping.mapTo(m.types().nullValueType());
       JavaMember.Nulls nulls = m.nulls();
       nullValues[i] =
-          nulls.jsonDefaultValue() == null
-              ? nulls.retainNull() ? new ConstantNull<>(null) : nullToJava.mapNull()
-              : new ConstantNull<>(toJavaType(this, m, nulls.jsonDefaultValue(), new Object[0]));
+          nulls.defaultValue() == null
+              ? nulls.retainNulls() ? new ConstantNull<>(null) : nullToJava.mapNull()
+              : new ConstantNull<>(toJavaType(this, m, nulls.defaultValue(), new Object[0]));
     }
 
     JavaMember getMemberByJsonName(String jsonName) {

@@ -67,15 +67,15 @@ record JavaMember(
   }
 
   /**
-   * @param retainNull when true, JSON null or undefined (no such member) translates to Java {@code
+   * @param retainNulls when true, JSON null or undefined (no such member) translates to Java {@code
    *     null} independent of any mapping settings
    * @param hasDefaultParameter true in case the method represented by this member has a default
    *     argument to return in case the member is not present or given as JSON null
-   * @param jsonDefaultValue when non-null this is the Java equivalent of the JSON value provided
-   *     via annotation that should be used in case the member is null or undefined in the JSON
-   *     input. The JSON equivalent Java is mapped to target type as usual.
+   * @param defaultValue when non-null this is the Java equivalent of the JSON value provided via
+   *     annotation that should be used in case the member is null or undefined in the JSON input.
+   *     The JSON equivalent Java is mapped to target type as usual.
    */
-  record Nulls(boolean retainNull, boolean hasDefaultParameter, Object jsonDefaultValue) {
+  record Nulls(boolean retainNulls, boolean hasDefaultParameter, Object defaultValue) {
     static final Nulls ROOT = new Nulls(false, false, "");
   }
 
@@ -223,14 +223,15 @@ record JavaMember(
     if (property != null && !property.defaultValue().isEmpty()) {
       jsonDefaultValue = JsonParser.parse(property.defaultValue());
     }
-    boolean retainNull = processingType == RAW_VALUES || property != null && property.retainNull();
+    boolean retainNulls =
+        processingType == RAW_VALUES || property != null && property.retainNulls();
     return new JavaMember(
         isKeyProperty ? 0 : index,
         computeJsonName(m),
         isKeyProperty,
         processingType,
         new Types(m.getReturnType(), collectionType, computeKeyType(m, processingType), valueType),
-        new Nulls(retainNull, computeHasDefaultParameter(m, processingType), jsonDefaultValue),
+        new Nulls(retainNulls, computeHasDefaultParameter(m, processingType), jsonDefaultValue),
         new Constraints(
             computeMinOccur(m), computeMaxOccur(m), 1, 128, 256, EnumSet.allOf(JsonType.class)));
   }

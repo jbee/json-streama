@@ -1,14 +1,14 @@
 package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
 
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 import test.integration.Model.Album;
 
 /** See if the {@link JsonStream} can handle skipping unmapped members. */
-class TestJsonStreamFeatureIgnoreMembers {
+class TestJsonStreamSkipMembers {
 
   @Test
   void skipNumberMember() {
@@ -111,7 +111,7 @@ class TestJsonStreamFeatureIgnoreMembers {
   }
 
   private static void assertSkippingToArtist(String json) {
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
+    Album album = JsonStream.ofRoot(Album.class, JsonInputStream.of(json));
     assertEquals("Tom Waits", album.artist());
     assertEquals("Bone Machine", album.name());
   }

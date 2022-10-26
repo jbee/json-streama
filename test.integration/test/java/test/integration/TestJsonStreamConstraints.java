@@ -2,11 +2,11 @@ package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonProperty;
 import se.jbee.json.stream.JsonSchemaException;
 import se.jbee.json.stream.JsonStream;
@@ -17,7 +17,7 @@ import se.jbee.json.stream.JsonStream;
  * <p>These are the {@link JsonProperty#minOccur()}, {@link JsonProperty#maxOccur()} and {@link
  * JsonProperty#required()} restrictions.
  */
-class TestJsonStreamFeatureRestrictions {
+class TestJsonStreamConstraints {
 
   interface ProxyStreamRoot {
     @JsonProperty(maxOccur = 3)
@@ -39,7 +39,7 @@ class TestJsonStreamFeatureRestrictions {
           "max3": [{"name": "A"}, {"name": "B"}, {"name": "C"}]
         }""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     assertEquals(List.of("A", "B", "C"), root.max3().map(Element::name).toList());
   }
 
@@ -51,7 +51,7 @@ class TestJsonStreamFeatureRestrictions {
           "max3": [{"name": "A"}, {"name": "B"}, {"name": "C"}, {"name": "D"}]
         }""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     Stream<Element> max3 = root.max3();
     JsonSchemaException ex =
         assertThrows(JsonSchemaException.class, () -> max3.forEach(Element::name));
@@ -66,7 +66,7 @@ class TestJsonStreamFeatureRestrictions {
           "min2": [{"name": "A"}, {"name": "B"}]
         }""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     assertEquals(List.of("A", "B"), root.min2().map(Element::name).toList());
   }
 
@@ -78,7 +78,7 @@ class TestJsonStreamFeatureRestrictions {
           "min2": [{"name": "A"}]
         }""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     Stream<Element> min2 = root.min2();
     JsonSchemaException ex =
         assertThrows(JsonSchemaException.class, () -> min2.forEach(Element::name));
@@ -94,7 +94,7 @@ class TestJsonStreamFeatureRestrictions {
           "min2": null
         }""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     // note that for null the exception occurs when accessing the member
     // whereas too little elements are found once the stream is processed
     JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);
@@ -108,7 +108,7 @@ class TestJsonStreamFeatureRestrictions {
         """
         {}""";
 
-    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, asJsonInput(json));
+    ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     // note that for null the exception occurs when accessing the member
     // whereas too little elements are found once the stream is processed
     JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);

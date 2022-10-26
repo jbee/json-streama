@@ -4,12 +4,7 @@ import static java.lang.Character.toChars;
 import static java.lang.Integer.parseInt;
 import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.Reader;
 import java.io.Serializable;
-import java.io.StringReader;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,7 +36,7 @@ import java.util.function.Supplier;
  * @author Jan Bernitt
  * @since 1.0
  */
-record JsonParser(IntSupplier read, Supplier<String> printPosition) {
+record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
 
   private static final char[] NODE_STARTING_CHARS = {
     '{', // object
@@ -52,30 +47,9 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'
   };
 
-  static IntSupplier from(InputStream in) {
-    return () -> {
-      try {
-        return in.read();
-      } catch (IOException ex) {
-        throw new UncheckedIOException(ex);
-      }
-    };
-  }
-
-  static IntSupplier from(Reader in) {
-    return () -> {
-      try {
-        return in.read();
-      } catch (IOException ex) {
-        throw new UncheckedIOException(ex);
-      }
-    };
-  }
-
   static Serializable parse(String json) {
     AtomicReference<Serializable> value = new AtomicReference<>();
-    StringReader in = new StringReader(json + ",");
-    new JsonParser(from(in), () -> json).readNodeDetect(value::set);
+    new JsonParser(JsonInputStream.of(json + ","), () -> json).readNodeDetect(value::set);
     return value.get();
   }
 
@@ -317,7 +291,7 @@ record JsonParser(IntSupplier read, Supplier<String> printPosition) {
   }
 
   private int nextCodePoint() {
-    return read.getAsInt();
+    return in.readCodePoint();
   }
 
   public void skipCodePoints(int n) {

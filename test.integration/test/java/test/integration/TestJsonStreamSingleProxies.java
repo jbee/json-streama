@@ -1,9 +1,9 @@
 package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static test.integration.Utils.asJsonInput;
 
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 /**
@@ -34,7 +34,7 @@ class TestJsonStreamSingleProxies {
             }
           }
             """;
-    Entry root = JsonStream.ofRoot(Entry.class, asJsonInput(json));
+    Entry root = JsonStream.ofRoot(Entry.class, JsonInputStream.of(json));
     Entry down1 = root.down();
     assertEquals("hallo", down1.content());
     assertEquals("hello", down1.down().content());

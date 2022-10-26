@@ -2,15 +2,19 @@ package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static se.jbee.json.stream.JsonStream.ofRoot;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonProperty;
 import se.jbee.json.stream.JsonToJava;
 
@@ -19,34 +23,6 @@ import se.jbee.json.stream.JsonToJava;
  * the related features of {@link JsonProperty} to adjust them.
  */
 class TestJsonStreamNulls {
-
-  interface PrimitiveRoot {
-    int intValue();
-
-    long longValue();
-
-    double doubleValue();
-
-    float floatValue();
-
-    boolean booleanValue();
-
-    char charValue();
-  }
-
-  interface WrapperRoot {
-    Integer integerValue();
-
-    Long longValue();
-
-    Double doubleValue();
-
-    Float floatValue();
-
-    Boolean booleanValue();
-
-    Character characterValue();
-  }
 
   interface CollectionRoot {
     List<String> list();
@@ -58,235 +34,323 @@ class TestJsonStreamNulls {
     Map<String, String> map();
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "intValue": null,
+      "longValue": null,
+      "doubleValue":null,
+      "floatValue": null,
+      "booleanValue": null,
+      "charValue": null
+      }
+      """
+      })
+  void null_PrimitivesHaveNullValue(String json) {
+    interface PrimitiveRoot {
+      int intValue();
+
+      long longValue();
+
+      double doubleValue();
+
+      float floatValue();
+
+      boolean booleanValue();
+
+      char charValue();
+    }
+    PrimitiveRoot root = ofRoot(PrimitiveRoot.class, JsonInputStream.of(json));
+    assertEquals(0, root.intValue());
+    assertEquals(0L, root.longValue());
+    assertEquals(0d, root.doubleValue());
+    assertEquals(0f, root.floatValue());
+    assertFalse(root.booleanValue());
+    assertEquals((char) 0, root.charValue());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "integerValue": null,
+      "longValue": null,
+      "doubleValue":null,
+      "floatValue": null,
+      "booleanValue": null,
+      "characterValue": null
+      }
+      """
+      })
+  void null_WrappersAreNull(String json) {
+    interface WrapperRoot {
+      Integer integerValue();
+
+      Long longValue();
+
+      Double doubleValue();
+
+      Float floatValue();
+
+      Boolean booleanValue();
+
+      Character characterValue();
+    }
+    WrapperRoot root = ofRoot(WrapperRoot.class, JsonInputStream.of(json));
+    assertNull(root.integerValue());
+    assertNull(root.longValue());
+    assertNull(root.doubleValue());
+    assertNull(root.floatValue());
+    assertNull(root.booleanValue());
+    assertNull(root.characterValue());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "list": null,
+      "set": null,
+      "collection": null,
+      "map": null
+      }
+      """
+      })
+  void null_CollectionsAreEmptyWhenDefinedNull(String json) {
+    CollectionRoot root = ofRoot(CollectionRoot.class, JsonInputStream.of(json));
+    assertEquals(List.of(), root.list());
+    assertEquals(Set.of(), root.set());
+    assertEquals(List.of(), root.collection());
+    assertEquals(Map.of(), root.map());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "list": null,
+      "set": null,
+      "collection": null,
+      "map": null
+      }
+      """
+      })
+  void null_CollectionsMapNull(String json) {
+    JsonToJava toJava =
+        JsonToJava.DEFAULT
+            .with(List.class, null, List::of)
+            .with(Set.class, null, Set::of)
+            .with(Collection.class, null, List::of)
+            .with(Map.class, null, e -> Map.of("value", e));
+
+    CollectionRoot root = ofRoot(CollectionRoot.class, JsonInputStream.of(json), toJava);
+    assertNull(root.list());
+    assertNull(root.set());
+    assertNull(root.collection());
+    assertNull(root.map());
+  }
+
   /**
    * Undefined or JSON null in the input translates to Java {@code null} because of {@link
-   * JsonProperty#retainNull()} which has higher precedence than any mapping
+   * JsonProperty#retainNulls()} which has higher precedence than any mapping
    */
-  interface CollectionNullRoot {
-    @JsonProperty(retainNull = true)
-    List<String> list();
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "list": null,
+      "set": null,
+      "collection": null,
+      "map": null
+      }
+      """
+      })
+  void null_CollectionsAnnotatedRetainNulls(String json) {
+    interface CollectionNullRoot {
+      @JsonProperty(retainNulls = true)
+      List<String> list();
 
-    @JsonProperty(retainNull = true)
-    Set<String> set();
+      @JsonProperty(retainNulls = true)
+      Set<String> set();
 
-    @JsonProperty(retainNull = true)
-    Collection<String> collection();
+      @JsonProperty(retainNulls = true)
+      Collection<String> collection();
 
-    @JsonProperty(retainNull = true)
-    Map<String, String> map();
+      @JsonProperty(retainNulls = true)
+      Map<String, String> map();
+    }
+    CollectionNullRoot root = ofRoot(CollectionNullRoot.class, JsonInputStream.of(json));
+    assertNull(root.list());
+    assertNull(root.set());
+    assertNull(root.collection());
+    assertNull(root.map());
   }
 
   /**
    * Undefined or JSON null in the input translates to the annotated {@link
    * JsonProperty#defaultValue()}
    */
-  interface CollectionDefaultValueRoot {
-    @JsonProperty(defaultValue = "[]")
-    List<String> list();
-
-    @JsonProperty(defaultValue = "[1, 2,\t  3]")
-    Set<Integer> set();
-
-    @JsonProperty(defaultValue = """
-["a","b","c"]
-""")
-    Collection<String> collection();
-
-    @JsonProperty(defaultValue = "{\"a\":\"b\"}")
-    Map<String, String> map();
-  }
-
-  @Test
-  void null_PrimitivesHaveNullValueWhenUndefined() {
-    String json = // language=JSON
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
         """
-        {}
-        """;
-    PrimitiveRoot root = ofRoot(PrimitiveRoot.class, asJsonInput(json));
-    assertEquals(0, root.intValue());
-    assertEquals(0L, root.longValue());
-    assertEquals(0d, root.doubleValue());
-    assertEquals(0f, root.floatValue());
-    assertFalse(root.booleanValue());
-    assertEquals((char) 0, root.charValue());
-  }
-
-  @Test
-  void null_PrimitivesHaveNullValueWhenDefinedNull() {
-    String json = // language=JSON
+      {}
+      """,
+        // language=JSON
         """
-        {
-        "intValue": null,
-        "longValue": null,
-        "doubleValue":null,
-        "floatValue": null,
-        "booleanValue": null,
-        "charValue": null
-        }
-        """;
-    PrimitiveRoot root = ofRoot(PrimitiveRoot.class, asJsonInput(json));
-    assertEquals(0, root.intValue());
-    assertEquals(0L, root.longValue());
-    assertEquals(0d, root.doubleValue());
-    assertEquals(0f, root.floatValue());
-    assertFalse(root.booleanValue());
-    assertEquals((char) 0, root.charValue());
-  }
+      {
+      "list":null,
+      "set":null,
+      "map":null,
+      "collection":null
+      }
+      """
+      })
+  void null_CollectionAnnotatedDefaultValue(String json) {
+    interface CollectionDefaultValueRoot {
+      @JsonProperty(defaultValue = "[]")
+      List<String> list();
 
-  @Test
-  void null_WrapperAreNullWhenUndefined() {
-    String json = // language=JSON
-        """
-        {}
-        """;
-    WrapperRoot root = ofRoot(WrapperRoot.class, asJsonInput(json));
-    assertNull(root.integerValue());
-    assertNull(root.longValue());
-    assertNull(root.doubleValue());
-    assertNull(root.floatValue());
-    assertNull(root.booleanValue());
-    assertNull(root.characterValue());
-  }
+      @JsonProperty(defaultValue = "[1, 2,\t  3]")
+      Set<Integer> set();
 
-  @Test
-  void null_WrapperAreNullWhenDefinedNull() {
-    String json = // language=JSON
-        """
-        {
-        "integerValue": null,
-        "longValue": null,
-        "doubleValue":null,
-        "floatValue": null,
-        "booleanValue": null,
-        "characterValue": null
-        }
-        """;
-    WrapperRoot root = ofRoot(WrapperRoot.class, asJsonInput(json));
-    assertNull(root.integerValue());
-    assertNull(root.longValue());
-    assertNull(root.doubleValue());
-    assertNull(root.floatValue());
-    assertNull(root.booleanValue());
-    assertNull(root.characterValue());
-  }
+      @JsonProperty(defaultValue = """
+          ["a","b","c"]
+          """)
+      Collection<String> collection();
 
-  @Test
-  void null_CollectionsAreEmptyWhenUndefined() {
-    String json = // language=JSON
-        """
-        {}
-        """;
-    CollectionRoot root = ofRoot(CollectionRoot.class, asJsonInput(json));
-    assertEquals(List.of(), root.list());
-    assertEquals(Set.of(), root.set());
-    assertEquals(List.of(), root.collection());
-    assertEquals(Map.of(), root.map());
-  }
-
-  @Test
-  void null_CollectionsAreEmptyWhenDefinedNull() {
-    String json = // language=JSON
-        """
-        {
-        "list": null,
-        "set": null,
-        "collection": null,
-        "map": null
-        }
-        """;
-    CollectionRoot root = ofRoot(CollectionRoot.class, asJsonInput(json));
-    assertEquals(List.of(), root.list());
-    assertEquals(Set.of(), root.set());
-    assertEquals(List.of(), root.collection());
-    assertEquals(Map.of(), root.map());
-  }
-
-  @Test
-  void null_CollectionsMapNullWhenUndefined() {
-    JsonToJava toJava =
-        JsonToJava.DEFAULT
-            .with(List.class, null, List::of)
-            .with(Set.class, null, Set::of)
-            .with(Collection.class, null, List::of)
-            .with(Map.class, null, e -> Map.of("value", e));
-
-    String json = // language=JSON
-        """
-        {}
-        """;
-    CollectionRoot root = ofRoot(CollectionRoot.class, asJsonInput(json), toJava);
-    assertNull(root.list());
-    assertNull(root.set());
-    assertNull(root.collection());
-    assertNull(root.map());
-  }
-
-  @Test
-  void null_CollectionsMapNullWhenDefinedNull() {
-    JsonToJava toJava =
-        JsonToJava.DEFAULT
-            .with(List.class, null, List::of)
-            .with(Set.class, null, Set::of)
-            .with(Collection.class, null, List::of)
-            .with(Map.class, null, e -> Map.of("value", e));
-
-    String json = // language=JSON
-        """
-        {
-        "list": null,
-        "set": null,
-        "collection": null,
-        "map": null
-        }
-        """;
-    CollectionRoot root = ofRoot(CollectionRoot.class, asJsonInput(json), toJava);
-    assertNull(root.list());
-    assertNull(root.set());
-    assertNull(root.collection());
-    assertNull(root.map());
-  }
-
-  @Test
-  void null_CollectionsRetainNullWhenUndefined() {
-    String json = // language=JSON
-        """
-        {}
-        """;
-    CollectionNullRoot root = ofRoot(CollectionNullRoot.class, asJsonInput(json));
-    assertNull(root.list());
-    assertNull(root.set());
-    assertNull(root.collection());
-    assertNull(root.map());
-  }
-
-  @Test
-  void null_CollectionsRetainNullWhenDefinedNull() {
-    String json = // language=JSON
-        """
-            {
-            "list": null,
-            "set": null,
-            "collection": null,
-            "map": null
-            }
-            """;
-    CollectionNullRoot root = ofRoot(CollectionNullRoot.class, asJsonInput(json));
-    assertNull(root.list());
-    assertNull(root.set());
-    assertNull(root.collection());
-    assertNull(root.map());
-  }
-
-  @Test
-  void null_CollectionDefaultValueNullWhenUndefined() {
-    String json = // language=JSON
-        """
-        {}
-        """;
-    CollectionDefaultValueRoot root = ofRoot(CollectionDefaultValueRoot.class, asJsonInput(json));
+      @JsonProperty(defaultValue = "{\"a\":\"b\"}")
+      Map<String, String> map();
+    }
+    CollectionDefaultValueRoot root =
+        ofRoot(CollectionDefaultValueRoot.class, JsonInputStream.of(json));
     assertEquals(List.of(), root.list());
     assertEquals(Set.of(1, 2, 3), root.set());
     assertEquals(List.of("a", "b", "c"), root.collection());
     assertEquals(Map.of("a", "b"), root.map());
   }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "stream": null,
+      "anotherStream": null
+      }
+      """
+      })
+  void null_StreamIsEmpty(String json) {
+    interface StreamRoot {
+      Stream<String> stream();
+
+      Stream<String> anotherStream();
+    }
+    StreamRoot root = ofRoot(StreamRoot.class, JsonInputStream.of(json));
+    Stream<String> stream = root.stream();
+    assertEquals(Stream.empty().toList(), stream.toList());
+    assertNotSame(stream, root.anotherStream(), "empty stream cannot be used as constant");
+    assertNotSame(
+        stream,
+        ofRoot(StreamRoot.class, JsonInputStream.of(json)).stream(),
+        "empty stream cannot be used as constant");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "iterator": null
+      }
+      """
+      })
+  void null_IteratorIsEmpty(String json) {
+    interface IteratorRoot {
+      Iterator<Integer> iterator();
+    }
+    IteratorRoot root = ofRoot(IteratorRoot.class, JsonInputStream.of(json));
+    Iterator<Integer> iter = root.iterator();
+    assertFalse(iter.hasNext());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {
+      "stream": null
+      }
+      """
+      })
+  void null_StreamMapNull(String json) {
+    interface StreamNullRoot {
+      Stream<String> stream();
+    }
+    JsonToJava toJava = JsonToJava.DEFAULT.with(Stream.class, null, Stream::of);
+    StreamNullRoot root = ofRoot(StreamNullRoot.class, JsonInputStream.of(json), toJava);
+    assertNull(root.stream());
+    // but still:
+    assertEquals(
+        List.of(),
+        ofRoot(
+                StreamNullRoot.class,
+                JsonInputStream.of( // language=JSON
+                    """
+        {
+        "stream":[]
+        }
+        """))
+            .stream()
+            .toList());
+  }
+
+  // TODO stream with annotations (affect the items, not the stream itself)
 }

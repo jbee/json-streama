@@ -3,12 +3,12 @@ package test.integration;
 import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static test.integration.Model.PLAYLIST_JSON;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 /**
@@ -24,7 +24,8 @@ class TestJsonStreamObjectsOfProxies {
                 "%d. %s %s (%.1f)",
                 track.no(), track.name(), "*".repeat(track.stars()), track.averageStars());
 
-    Model.Playlist list = JsonStream.ofRoot(Model.Playlist.class, asJsonInput(PLAYLIST_JSON));
+    Model.Playlist list =
+        JsonStream.ofRoot(Model.Playlist.class, JsonInputStream.of(PLAYLIST_JSON));
 
     assertEquals("me", list.author());
     assertEquals("Tom Waits Special", list.name());
@@ -35,7 +36,8 @@ class TestJsonStreamObjectsOfProxies {
 
   @Test
   void rootObjectAsProxyConsumer() {
-    Model.Playlist list = JsonStream.ofRoot(Model.Playlist.class, asJsonInput(PLAYLIST_JSON));
+    Model.Playlist list =
+        JsonStream.ofRoot(Model.Playlist.class, JsonInputStream.of(PLAYLIST_JSON));
 
     assertEquals("me", list.author());
     assertEquals("Tom Waits Special", list.name());
@@ -59,7 +61,7 @@ class TestJsonStreamObjectsOfProxies {
       }
     }
     """;
-    Model.Album album = JsonStream.ofRoot(Model.Album.class, asJsonInput(json));
+    Model.Album album = JsonStream.ofRoot(Model.Album.class, JsonInputStream.of(json));
     assertEquals(
         List.of("1. Earth Died Screaming", "2. Dirt in the Ground"),
         album.tracks().map(track -> track.no() + ". " + track.name()).collect(toList()));

@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 class TestJsonStreamAnyOtherValues {
@@ -27,7 +27,7 @@ class TestJsonStreamAnyOtherValues {
         """
             {}
             """;
-    AnyValuesRoot root = JsonStream.ofRoot(AnyValuesRoot.class, asJsonInput(json));
+    AnyValuesRoot root = JsonStream.ofRoot(AnyValuesRoot.class, JsonInputStream.of(json));
     assertEquals(0, root.anyOtherValues().size());
     assertNull(root.something());
   }
@@ -46,7 +46,7 @@ class TestJsonStreamAnyOtherValues {
         "something": "deep blue"
         }
         """;
-    AnyValuesRoot root = JsonStream.ofRoot(AnyValuesRoot.class, asJsonInput(json));
+    AnyValuesRoot root = JsonStream.ofRoot(AnyValuesRoot.class, JsonInputStream.of(json));
     Map<String, ?> anyValues = root.anyOtherValues();
     assertEquals(6, anyValues.size());
     assertEquals("world", anyValues.get("hello"));
@@ -66,7 +66,8 @@ class TestJsonStreamAnyOtherValues {
         """
         [{ "a": "b"}, {"c":"d"}, {"e":  "f"}]
         """;
-    Iterator<AnyValuesRoot> iter = JsonStream.of(AnyValuesRoot.class, asJsonInput(json)).iterator();
+    Iterator<AnyValuesRoot> iter =
+        JsonStream.of(AnyValuesRoot.class, JsonInputStream.of(json)).iterator();
     assertEquals(Map.of("a", "b"), iter.next().anyOtherValues());
     assertEquals(Map.of("c", "d"), iter.next().anyOtherValues());
     assertEquals(Map.of("e", "f"), iter.next().anyOtherValues());

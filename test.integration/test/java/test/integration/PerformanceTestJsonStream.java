@@ -4,13 +4,18 @@ import static java.lang.System.currentTimeMillis;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
 class PerformanceTestJsonStream {
@@ -63,7 +68,8 @@ class PerformanceTestJsonStream {
       FileChannel fileChannel = file.getChannel();
       MappedByteBuffer buffer =
           fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
-      Data data = JsonStream.ofRoot(Data.class, buffer::get);
+
+      Data data = JsonStream.ofRoot(Data.class, JsonInputStream.of(buffer::get));
       Iterator<Entry> entries = data.entries();
       while (entries.hasNext()) {
         Entry e = entries.next();

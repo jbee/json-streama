@@ -1,12 +1,14 @@
 package test.integration;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static test.integration.Model.Genre.Jazz;
-import static test.integration.Utils.asJsonInput;
 
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonFormatException;
+import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonSchemaException;
 import se.jbee.json.stream.JsonStream;
 import test.integration.Model.Album;
@@ -30,7 +32,7 @@ import test.integration.Model.Track;
  * A third returnType of error is a programming error when using the {@link java.lang.reflect.Proxy}
  * API. Parent proxies cannot be used while type their child stream members.
  */
-class TestJsonStreamFeatureExceptions {
+class TestJsonStreamExceptions {
 
   @Test
   void nullValueInAStreamIsFormatException() {
@@ -41,7 +43,7 @@ class TestJsonStreamFeatureExceptions {
 				null
 		]""";
 
-    Stream<Track> items = JsonStream.of(Track.class, asJsonInput(json));
+    Stream<Track> items = JsonStream.of(Track.class, JsonInputStream.of(json));
 
     JsonFormatException ex =
         assertThrows(JsonFormatException.class, () -> items.forEach(Track::name));
@@ -67,7 +69,7 @@ class TestJsonStreamFeatureExceptions {
       }]
     }""";
 
-    Discography discography = JsonStream.ofRoot(Discography.class, asJsonInput(json));
+    Discography discography = JsonStream.ofRoot(Discography.class, JsonInputStream.of(json));
     assertEquals("Tom Waits", discography.artist());
     // this might be surprising at first, we do not count any albums
     // the reason is that the next stream member we found is 'singles'
@@ -97,7 +99,7 @@ class TestJsonStreamFeatureExceptions {
       }
     }
     """;
-    Album album = JsonStream.ofRoot(Album.class, asJsonInput(json));
+    Album album = JsonStream.ofRoot(Album.class, JsonInputStream.of(json));
 
     assertEquals(Jazz, album.genre());
 
