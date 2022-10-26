@@ -32,8 +32,10 @@ import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import se.jbee.json.stream.JsonToJava.ConstantNull;
 import se.jbee.json.stream.JsonToJava.JsonTo;
 
 /**
@@ -300,7 +302,7 @@ public final class JsonStream implements InvocationHandler {
     if (value == null)
       return member.nulls().hasDefaultParameter()
           ? args[member.getDefaultValueParameterIndex()]
-          : info.nullValues[member.index()];
+          : info.nullValues[member.index()].get();
     if (value instanceof List<?> list) return toJavaCollection(info, member, list);
     if (value instanceof Map<?, ?> map) return toJavaMap(info, member, map);
     return toSimpleJavaType(info.getJsonToValue(member), value);
@@ -585,8 +587,8 @@ public final class JsonStream implements InvocationHandler {
     /** The java member (or type) the frames represent */
     private final JavaMember usage;
     /** Values for JSON null or undefined for each member by {@link JavaMember#index()} */
-    private final Object[] nullValues;
-    /** Converter to use for each member value by by {@link JavaMember#index()} */
+    private final Supplier<?>[] nullValues;
+    /** Converter to use for each member value by {@link JavaMember#index()} */
     private final JsonTo<?>[] jsonToValueTypes;
     /** Converter to use for each member key (in map values) by by {@link JavaMember#index()} */
     private final JsonTo<?>[] jsonToKeyTypes;
@@ -600,7 +602,7 @@ public final class JsonStream implements InvocationHandler {
       this.usage = usage;
       int size = membersByJsonName.size() + 1;
       this.membersByJsonName = membersByJsonName;
-      this.nullValues = new Object[size];
+      this.nullValues = new Supplier[size];
       this.jsonToValueTypes = new JsonTo<?>[size];
       this.jsonToKeyTypes = new JsonTo<?>[size];
       this.anyOtherValueMember =
@@ -619,8 +621,8 @@ public final class JsonStream implements InvocationHandler {
       JavaMember.Nulls nulls = m.nulls();
       nullValues[i] =
           nulls.jsonDefaultValue() == null
-              ? nulls.retainNull() ? null : nullToJava.mapNull().get()
-              : toJavaType(this, m, nulls.jsonDefaultValue(), new Object[0]);
+              ? nulls.retainNull() ? new ConstantNull<>(null) : nullToJava.mapNull()
+              : new ConstantNull<>(toJavaType(this, m, nulls.jsonDefaultValue(), new Object[0]));
     }
 
     JavaMember getMemberByJsonName(String jsonName) {
