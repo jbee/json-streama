@@ -1,12 +1,12 @@
 package se.jbee.json.stream;
 
 import static java.lang.String.format;
-import static java.util.Collections.emptyIterator;
 import static java.util.function.Function.identity;
 
 import java.io.Serializable;
 import java.lang.reflect.Constructor;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -43,7 +44,7 @@ public interface JsonToJava {
    * streaming types, mostly to get the adequate {@code null} value.
    *
    * @param to target Java type
-   * @param mapNull "immutable" constant to use for JSON null and undefined members
+   * @param mapNull yields the value or constant to use for JSON null and undefined members
    * @param mapString converts a JSON string to the target Java type
    * @param mapNumber converts a JSON number to the target Java type
    * @param mapBoolean converts a JSON boolean to the target Java type
@@ -51,10 +52,12 @@ public interface JsonToJava {
    */
   record JsonTo<T>(
       Class<T> to,
-      T mapNull,
+      Supplier<T> mapNull,
       Function<String, ? extends T> mapString,
       Function<Number, ? extends T> mapNumber,
       Function<Boolean, ? extends T> mapBoolean) {}
+
+  record ConstantNull<T>(T get) implements Supplier<T> {}
 
   /**
    * @param to the Java target type for all 3 conversions and the null value
@@ -87,12 +90,12 @@ public interface JsonToJava {
           .with(double.class, 0d, Double::valueOf, Number::doubleValue, b -> b ? 1d : 0d)
           .with(Boolean.class, null, Boolean::valueOf, n -> n.doubleValue() == 0d, identity())
           .with(boolean.class, false, Boolean::parseBoolean, n -> n.doubleValue() == 0d, identity())
-          .with(List.class, List.of(), List::of)
-          .with(Collection.class, List.of(), List::of)
-          .with(Set.class, Set.of(), Set::of)
-          .with(Stream.class, Stream.empty(), Stream::of)
-          .with(Map.class, Map.of(), JsonToJava::mapValueOf)
-          .with(Iterator.class, emptyIterator(), JsonToJava::iteratorValueOf)
+          .with(List.class, List::of, List::of)
+          .with(Collection.class, List::of, List::of)
+          .with(Set.class, Set::of, Set::of)
+          .with(Stream.class, Stream::empty, Stream::of)
+          .with(Map.class, Map::of, JsonToJava::mapValueOf)
+          .with(Iterator.class, Collections::emptyIterator, JsonToJava::iteratorValueOf)
           .with(null, Factory.NEW_INSTANCE)
           .immutable();
 
@@ -129,13 +132,14 @@ public interface JsonToJava {
   }
 
   @SuppressWarnings("unchecked")
-  default <T> JsonToJava with(Class<T> to, T mapNull, Function<?, ? extends T> mapAny) {
+  default <T> JsonToJava with(Class<T> to, Supplier<T> mapNull, Function<?, ? extends T> mapAny) {
     return with(
-        to,
-        mapNull,
-        (Function<String, T>) mapAny,
-        (Function<Number, T>) mapAny,
-        (Function<Boolean, T>) mapAny);
+        new JsonTo<>(
+            to,
+            mapNull == null ? new ConstantNull<>(null) : mapNull,
+            (Function<String, T>) mapAny,
+            (Function<Number, T>) mapAny,
+            (Function<Boolean, T>) mapAny));
   }
 
   default <T> JsonToJava with(
@@ -144,7 +148,7 @@ public interface JsonToJava {
       Function<String, ? extends T> mapString,
       Function<Number, ? extends T> mapNumber,
       Function<Boolean, ? extends T> mapBoolean) {
-    return with(new JsonTo<>(to, mapNull, mapString, mapNumber, mapBoolean));
+    return with(new JsonTo<>(to, new ConstantNull<>(mapNull), mapString, mapNumber, mapBoolean));
   }
 
   default <T> JsonToJava with(JsonTo<T> to) {
@@ -160,7 +164,7 @@ public interface JsonToJava {
       private <X> JsonTo<X> create(Class<X> to) {
         return new JsonTo<>(
             to,
-            null,
+            new ConstantNull<>(null),
             factory.create(String.class, to),
             factory.create(Number.class, to),
             factory.create(Boolean.class, to));
@@ -272,7 +276,7 @@ public interface JsonToJava {
    */
 
   private static <T> JsonTo<T> returnsNull(Class<T> to) {
-    return new JsonTo<>(to, null, s -> null, n -> null, b -> null);
+    return new JsonTo<>(to, new ConstantNull<>(null), s -> null, n -> null, b -> null);
   }
 
   private static <E> Iterator<E> iteratorValueOf(E e) {

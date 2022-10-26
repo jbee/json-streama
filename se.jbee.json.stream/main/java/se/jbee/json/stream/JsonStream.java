@@ -241,7 +241,7 @@ public final class JsonStream implements InvocationHandler {
     return member.nulls().hasDefaultParameter()
         ? args[member.getDefaultValueParameterIndex()]
         // NB: this is the stream type mapped, "nulls" has value type null value
-        : mapping.mapTo(member.types().returnType()).mapNull();
+        : mapping.mapTo(member.types().returnType()).mapNull().get();
   }
 
   private void readSimpleMembersAndSuspend(JsonFrame frame) {
@@ -619,7 +619,7 @@ public final class JsonStream implements InvocationHandler {
       JavaMember.Nulls nulls = m.nulls();
       nullValues[i] =
           nulls.jsonDefaultValue() == null
-              ? nulls.retainNull() ? null : nullToJava.mapNull()
+              ? nulls.retainNull() ? null : nullToJava.mapNull().get()
               : toJavaType(this, m, nulls.jsonDefaultValue(), new Object[0]);
     }
 
