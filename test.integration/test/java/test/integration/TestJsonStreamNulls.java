@@ -6,16 +6,20 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static se.jbee.json.stream.JsonStream.ofRoot;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonProperty;
+import se.jbee.json.stream.JsonStream;
 import se.jbee.json.stream.JsonToJava;
 
 /**
@@ -160,7 +164,7 @@ class TestJsonStreamNulls {
       }
       """
       })
-  void null_CollectionsMapNull(String json) {
+  void null_CollectionsConfigNull(String json) {
     JsonToJava toJava =
         JsonToJava.DEFAULT
             .with(List.class, null, List::of)
@@ -196,7 +200,7 @@ class TestJsonStreamNulls {
       }
       """
       })
-  void null_CollectionsAnnotatedRetainNulls(String json) {
+  void null_CollectionRetainNulls(String json) {
     interface CollectionNullRoot {
       @JsonProperty(retainNulls = true)
       List<String> list();
@@ -238,7 +242,7 @@ class TestJsonStreamNulls {
       }
       """
       })
-  void null_CollectionAnnotatedDefaultValue(String json) {
+  void null_CollectionDefaultValue(String json) {
     interface CollectionDefaultValueRoot {
       @JsonProperty(defaultValue = "[]")
       List<String> list();
@@ -330,26 +334,70 @@ class TestJsonStreamNulls {
       }
       """
       })
-  void null_StreamMapNull(String json) {
+  void null_StreamConfigNull(String json) {
     interface StreamNullRoot {
       Stream<String> stream();
     }
     JsonToJava toJava = JsonToJava.DEFAULT.with(Stream.class, null, Stream::of);
     StreamNullRoot root = ofRoot(StreamNullRoot.class, JsonInputStream.of(json), toJava);
-    assertNull(root.stream());
-    // but still:
+    assertNull(root.stream(), "a stream can be configured to be null");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {
+      "stream":[]
+      }
+      """
+      })
+  void null_StreamConfigNull_Empty(String json) {
+    interface StreamNullRoot {
+      Stream<String> stream();
+    }
+    JsonToJava toJava = JsonToJava.DEFAULT.with(Stream.class, null, Stream::of);
+    StreamNullRoot root = ofRoot(StreamNullRoot.class, JsonInputStream.of(json), toJava);
     assertEquals(
         List.of(),
-        ofRoot(
-                StreamNullRoot.class,
-                JsonInputStream.of( // language=JSON
-                    """
+        root.stream().toList(),
+        "an empty array [] becomes an empty stream even if a null or undefined stream is configured"
+            + " to be null");
+  }
+
+  @Test
+  void null_MappedStreamNullForElements() {
+    String json = // language=JSON
+        """
+        ["hello", null, "again"]
+        """;
+    Stream<String> root = JsonStream.of(String.class, JsonInputStream.of(json));
+    assertEquals(Arrays.asList("hello", null, "again"), root.toList());
+    // same but with null mapped to empty String
+    root =
+        JsonStream.of(
+            String.class,
+            JsonInputStream.of(json),
+            JsonToJava.DEFAULT.with(
+                String.class, "", Function.identity(), String::valueOf, String::valueOf));
+    assertEquals(List.of("hello", "", "again"), root.toList());
+  }
+
+  @Test
+  void null_MappedStreamRetainNullsForElements() {
+    String json = // language=JSON
+        """
         {
-        "stream":[]
+        "stream": ["hello", null, "again"]
         }
-        """))
-            .stream()
-            .toList());
+        """;
+    interface StreamRetainNullsRoot {
+      @JsonProperty(retainNulls = true)
+      Stream<String> stream();
+    }
+    StreamRetainNullsRoot root = ofRoot(StreamRetainNullsRoot.class, JsonInputStream.of(json));
+    assertEquals(Arrays.asList("hello", null, "again"), root.stream().toList());
   }
 
   // TODO stream with annotations (affect the items, not the stream itself)

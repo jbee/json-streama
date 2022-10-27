@@ -1,5 +1,10 @@
 package se.jbee.json.stream;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UTFDataFormatException;
+import java.io.UncheckedIOException;
 import java.util.PrimitiveIterator;
 import java.util.function.IntSupplier;
 
@@ -79,34 +84,7 @@ public interface JsonInputStream {
   }
 
   static JsonInputStream of(PrimitiveIterator.OfInt json) {
-    class IntStreamJsonInputStream implements JsonInputStream {
-      final PrimitiveIterator.OfInt json;
-      int next;
-      boolean peeked;
-
-      IntStreamJsonInputStream(PrimitiveIterator.OfInt json) {
-        this.json = json;
-      }
-
-      @Override
-      public int peek() {
-        buffer();
-        return next;
-      }
-
-      @Override
-      public int readCodePoint() {
-        buffer();
-        peeked = false;
-        return next;
-      }
-
-      private void buffer() {
-        if (!peeked) next = json.hasNext() ? json.nextInt() : -1;
-        peeked = true;
-      }
-    }
-    return new IntStreamJsonInputStream(json);
+    return of(() -> json.hasNext() ? json.nextInt() : -1);
   }
 
   static JsonInputStream of(IntSupplier json) {
@@ -120,23 +98,107 @@ public interface JsonInputStream {
       }
 
       @Override
-      public int peek() {
-        buffer();
+      public final int peek() {
+        readNextIfNeeded();
         return next;
       }
 
       @Override
-      public int readCodePoint() {
-        buffer();
+      public final int readCodePoint() {
+        readNextIfNeeded();
         peeked = false;
         return next;
       }
 
-      private void buffer() {
+      void readNextIfNeeded() {
         if (!peeked) next = json.getAsInt();
         peeked = true;
       }
     }
     return new IntSupplierJsonInputStream(json);
+  }
+
+  static JsonInputStream of(byte[] utf8Json) {
+    return of(new ByteArrayInputStream(utf8Json));
+  }
+
+  static JsonInputStream of(InputStream utf8Json) {
+    return of(utf8Json, 4096);
+  }
+
+  static JsonInputStream of(InputStream utf8Json, int bufferSize) {
+    class Utf8InputStreamJsonInputStream implements JsonInputStream {
+
+      final InputStream utf8Json;
+      final byte[] buffer;
+
+      int offset;
+      int pos;
+
+      Utf8InputStreamJsonInputStream(InputStream utf8Json, int size) {
+        this.utf8Json = utf8Json;
+        this.buffer = new byte[size];
+        pos = size;
+      }
+
+      @Override
+      public int peek() {
+        buffer();
+        return buffer[pos];
+      }
+
+      @Override
+      public int read() {
+        buffer();
+        return buffer[pos++];
+      }
+
+      @Override
+      public int readCodePoint() {
+        buffer();
+        int b1 = buffer[pos++];
+        if (b1 >= 0) return b1;
+        buffer();
+        int b2 = buffer[pos++];
+        if ((b1 & 0b1111_0000) == 0b1111_0000) {
+          // 4 bytes, 21 bits: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+          buffer();
+          int b3 = buffer[pos++];
+          buffer();
+          int b4 = buffer[pos++];
+          return (b1 & 0b0000_0111) << 18
+              | (b2 & 0b0011_1111) << 12
+              | (b3 & 0b0011_1111) << 6
+              | (b4 & 0b0011_1111);
+        }
+        if ((b1 & 0b1110_0000) == 0b1110_0000) {
+          // 3 bytes, 16 bits: 1110xxxx 10xxxxxx 10xxxxxx
+          buffer();
+          int b3 = buffer[pos++];
+          return (b1 & 0b0000_1111) << 12 | (b2 & 0b0011_1111) << 6 | (b3 & 0b0011_1111);
+        }
+        if ((b1 & 0b1100_0000) == 0b1100_0000) {
+          // 2 bytes, 11 bits: 110xxxxx 10xxxxxx
+          return (b1 & 0b0001_1111) << 6 | (b2 & 0b0011_1111);
+        }
+        // none of the above :(
+        throw new UncheckedIOException(
+            new UTFDataFormatException(
+                "Not a valid UTF-8 byte at byte position: " + (offset - 1) * buffer.length + pos));
+      }
+
+      private void buffer() {
+        if (pos < buffer.length) return;
+        try {
+          int len = utf8Json.read(buffer, 0, buffer.length);
+          if (len < buffer.length) buffer[len] = -1; // mark end
+          offset++;
+          pos = 0;
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }
+    }
+    return new Utf8InputStreamJsonInputStream(utf8Json, bufferSize);
   }
 }

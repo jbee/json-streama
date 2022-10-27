@@ -5,6 +5,7 @@ import static java.util.Spliterators.spliteratorUnknownSize;
 import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toSet;
 import static se.jbee.json.stream.JavaMember.ProcessingType.*;
+import static se.jbee.json.stream.JavaMember.isProxyInterface;
 import static se.jbee.json.stream.JsonFormatException.unexpectedInputCharacter;
 
 import java.io.Serializable;
@@ -128,10 +129,19 @@ public final class JsonStream implements InvocationHandler {
       JsonInputStream in,
       JsonToJava mapping,
       Map<JavaMember, ProxyInfo> cache) {
-    JavaMember member = JavaMember.newRootMember(PROXY_STREAM, Stream.class, streamType);
+    if (isProxyInterface(streamType)) {
+      JavaMember member = JavaMember.newRootMember(PROXY_STREAM, Stream.class, streamType);
+      JsonStream handler = new JsonStream(in, mapping, cache);
+      @SuppressWarnings("unchecked")
+      Stream<T> res = (Stream<T>) handler.yieldStreaming(mapping, null, member, new String[0]);
+      return res;
+    }
+    JavaMember member = JavaMember.newRootMember(MAPPED_STREAM, Stream.class, streamType);
+    JsonFrame frame =
+        new JsonFrame(new ProxyInfo(member, Map.of(member.jsonName(), member), mapping), null);
     JsonStream handler = new JsonStream(in, mapping, cache);
     @SuppressWarnings("unchecked")
-    Stream<T> res = (Stream<T>) handler.yieldStreaming(mapping, member, new String[0]);
+    Stream<T> res = (Stream<T>) handler.yieldStreaming(mapping, frame, member, new String[0]);
     return res;
   }
 
@@ -188,13 +198,14 @@ public final class JsonStream implements InvocationHandler {
       frame.markAsProcessed(member, 0);
       // what we have is what we now are going to handle so afterwards we could do next one
       frame.suspendedAtMember = null;
-      return yieldStreaming(mapping, member, args);
+      return yieldStreaming(mapping, frame, member, args);
     }
     if (member.processingType() == RAW_VALUES) return frame.getAnyOtherValue();
     return toJavaType(frame.info, member, frame.getRawValue(member), args);
   }
 
-  private Object yieldStreaming(JsonToJava mapping, JavaMember member, Object[] args) {
+  private Object yieldStreaming(
+      JsonToJava mapping, JsonFrame frame, JavaMember member, Object[] args) {
     int cp = in.readCharSkipWhitespace();
     if (cp == 'n') { // streaming member is declared JSON null
       in.skipCodePoints(3); // ull
@@ -209,9 +220,9 @@ public final class JsonStream implements InvocationHandler {
         case PROXY_ITERATOR -> arrayAsProxyIterator(member);
         case PROXY_CONSUMER -> arrayViaProxyConsumer(member, args);
           // mapped values
-        case MAPPED_CONSUMER -> arrayViaMappedConsumer(member, args);
-        case MAPPED_ITERATOR -> arrayAsMappedIterator(member, args);
-        case MAPPED_STREAM -> arrayAsMappedStream(member, args);
+        case MAPPED_CONSUMER -> arrayViaMappedConsumer(frame, member, args);
+        case MAPPED_ITERATOR -> arrayAsMappedIterator(frame, member, args);
+        case MAPPED_STREAM -> arrayAsMappedStream(frame, member, args);
         default -> throw new UnsupportedOperationException("stream of " + member.processingType());
       };
     }
@@ -223,9 +234,9 @@ public final class JsonStream implements InvocationHandler {
       case PROXY_ITERATOR -> objectAsProxyIterator(member);
       case PROXY_CONSUMER -> objectAsProxyConsumer(member, args);
         // mapped values
-      case MAPPED_CONSUMER -> objectAsMappedEntryConsumer(member, args);
-      case MAPPED_ITERATOR -> objectAsMappedEntryIterator(member, args);
-      case MAPPED_STREAM -> objectAsMappedEntryStream(member, args);
+      case MAPPED_CONSUMER -> objectAsMappedEntryConsumer(frame, member, args);
+      case MAPPED_ITERATOR -> objectAsMappedEntryIterator(frame, member, args);
+      case MAPPED_STREAM -> objectAsMappedEntryStream(frame, member, args);
       default -> throw new UnsupportedOperationException("stream of " + member.processingType());
     };
   }
@@ -450,24 +461,23 @@ public final class JsonStream implements InvocationHandler {
     };
   }
 
-  private Void arrayViaMappedConsumer(JavaMember member, Object[] args) {
+  private Void arrayViaMappedConsumer(JsonFrame frame, JavaMember member, Object[] args) {
     @SuppressWarnings("unchecked")
     Consumer<Object> consumer = (Consumer<Object>) args[0];
-    arrayAsMappedIterator(member, args).forEachRemaining(consumer);
+    arrayAsMappedIterator(frame, member, args).forEachRemaining(consumer);
     return null; // = void
   }
 
-  private Stream<?> arrayAsMappedStream(JavaMember member, Object[] args) {
-    return toStream(arrayAsMappedIterator(member, args));
+  private Stream<?> arrayAsMappedStream(JsonFrame frame, JavaMember member, Object[] args) {
+    return toStream(arrayAsMappedIterator(frame, member, args));
   }
 
-  private Iterator<?> arrayAsMappedIterator(JavaMember member, Object[] args) {
-    JsonFrame frame = currentFrame();
+  private Iterator<?> arrayAsMappedIterator(JsonFrame frame, JavaMember member, Object[] args) {
     frame.mappedStreamItemIndex = -1;
     return new Iterator<>() {
       final JsonTo<?> key2Java = frame.info.getJsonToKey(member);
-      int cp = ',';
-
+      int cp = in.peek() == ']' ? ']' : ',';
+      // TODO allow { } with key/value as elements
       @Override
       public boolean hasNext() {
         if (cp == ']') {
@@ -493,19 +503,20 @@ public final class JsonStream implements InvocationHandler {
     };
   }
 
-  private Void objectAsMappedEntryConsumer(JavaMember member, Object[] args) {
+  private Void objectAsMappedEntryConsumer(JsonFrame frame, JavaMember member, Object[] args) {
     @SuppressWarnings("unchecked")
     Consumer<Entry<?, ?>> consumer = (Consumer<Entry<?, ?>>) args[0];
-    objectAsMappedEntryIterator(member, args).forEachRemaining(consumer);
+    objectAsMappedEntryIterator(frame, member, args).forEachRemaining(consumer);
     return null; // = void
   }
 
-  private Stream<Entry<?, ?>> objectAsMappedEntryStream(JavaMember member, Object[] args) {
-    return toStream(objectAsMappedEntryIterator(member, args));
+  private Stream<Entry<?, ?>> objectAsMappedEntryStream(
+      JsonFrame frame, JavaMember member, Object[] args) {
+    return toStream(objectAsMappedEntryIterator(frame, member, args));
   }
 
-  private Iterator<Entry<?, ?>> objectAsMappedEntryIterator(JavaMember member, Object[] args) {
-    JsonFrame frame = currentFrame();
+  private Iterator<Entry<?, ?>> objectAsMappedEntryIterator(
+      JsonFrame frame, JavaMember member, Object[] args) {
     return new Iterator<>() {
       final JsonTo<?> key2Java = frame.info.getJsonToKey(member);
       int cp = in.readCharSkipWhitespace();

@@ -76,7 +76,7 @@ record JavaMember(
    *     The JSON equivalent Java is mapped to target type as usual.
    */
   record Nulls(boolean retainNulls, boolean hasDefaultParameter, Object defaultValue) {
-    static final Nulls ROOT = new Nulls(false, false, "");
+    static final Nulls ROOT = new Nulls(false, false, null);
   }
 
   record Constraints(
@@ -393,7 +393,7 @@ record JavaMember(
     return t != null && t.isInterface();
   }
 
-  private static boolean isProxyInterface(Class<?> t) {
+  public static boolean isProxyInterface(Class<?> t) {
     return isInterface(t)
         && !Map.class.isAssignableFrom(t)
         && !Collection.class.isAssignableFrom(t)

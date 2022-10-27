@@ -9,29 +9,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 /**
  * A code point based JSON input reader.
  *
- * <p>Characters are supplied by the {@link IntSupplier}. As usual the end of input is marked by
+ * <p>Characters are supplied by the {@link JsonInputStream}. As usual the end of input is marked by
  * returning {@code -1}.
  *
  * <p>The reader supports mapping JSON to {@link String}, {@link Number} or {@link Boolean} as well
  * as {@link java.util.List}s or {@link java.util.Map}s.
  *
  * <p>In addition, input can also be skipped, that means consumed without mapping it to anything.
- *
- * <p>Since the reader has no means to access input characters other than pulling the next code
- * point from the stream it is no surprise that it is implemented without any form of lookahead or
- * use of mark/reset. In rare circumstances this means a code point has to be recognised at two
- * places (methods). In such cases the code point is passed on.
- *
- * <p>This also means methods might expect that the first character of the node they read has
- * already been consumed to identify which node returnType it is. Similarly, some methods might
- * return the character after the node as this is the only way for them to detect the end of the
- * node. The caller then has to continue type with the returned code point.
  *
  * @author Jan Bernitt
  * @since 1.0
@@ -56,6 +45,10 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
   /*
   API
    */
+
+  int peek() {
+    return in.peek();
+  }
 
   int readNodeDetect(Consumer<Serializable> setter) {
     return readNodeDetect(setter, false);
@@ -146,18 +139,18 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
    */
   String readString() {
     StringBuilder str = new StringBuilder();
-    int cp = nextCodePoint();
+    int cp = nextAnyCP();
     while (cp != -1) {
       if (cp == '"') {
         // found the end (if escaped we would have hopped over)
         return str.toString();
       }
       if (cp == '\\') {
-        cp = nextCodePoint();
+        cp = nextAsciiCP();
         switch (cp) {
           case 'u' -> // unicode uXXXX
           {
-            int[] code = {nextCodePoint(), nextCodePoint(), nextCodePoint(), nextCodePoint()};
+            int[] code = {nextAsciiCP(), nextAsciiCP(), nextAsciiCP(), nextAsciiCP()};
             str.append(toChars(parseInt(new String(code, 0, 4), 16)));
           }
           case '\\' -> str.append('\\');
@@ -173,7 +166,7 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
       } else {
         str.appendCodePoint(cp);
       }
-      cp = nextCodePoint();
+      cp = nextAnyCP();
     }
     throw formatException(-1, '"');
   }
@@ -190,8 +183,8 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
    * @return the next code point in the input that is not JSON whitespace
    */
   int readCharSkipWhitespace() {
-    int cp = nextCodePoint();
-    while (cp != -1 && isWhitespace(cp)) cp = nextCodePoint();
+    int cp = nextAsciiCP();
+    while (cp != -1 && isWhitespace(cp)) cp = nextAsciiCP();
     if (cp == -1) throw formatException(-1);
     return cp;
   }
@@ -213,18 +206,18 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
   private int readNumber(int cp0, Consumer<Serializable> setter) {
     StringBuilder n = new StringBuilder();
     n.append((char) cp0);
-    int cp = nextCodePoint();
+    int cp = nextAsciiCP();
     cp = readDigits(n, cp);
     if (cp == '.') {
       n.append('.');
-      cp = readDigits(n, nextCodePoint());
+      cp = readDigits(n, nextAsciiCP());
     }
     if (cp == 'e' || cp == 'E') {
       n.append('e');
-      cp = nextCodePoint();
+      cp = nextAsciiCP();
       if (cp == '+' || cp == '-') {
         n.append((char) cp);
-        cp = nextCodePoint();
+        cp = nextAsciiCP();
       }
       cp = readDigits(n, cp);
     }
@@ -247,7 +240,7 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
     int cp = cp0;
     while (isDigit(cp)) {
       n.append((char) cp);
-      cp = nextCodePoint();
+      cp = nextAsciiCP();
     }
     return cp;
   }
@@ -290,12 +283,16 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
     return res;
   }
 
-  private int nextCodePoint() {
+  private int nextAsciiCP() {
+    return in.read();
+  }
+
+  private int nextAnyCP() {
     return in.readCodePoint();
   }
 
   public void skipCodePoints(int n) {
-    for (int i = 0; i < n; i++) if (nextCodePoint() == -1) throw formatException(-1);
+    for (int i = 0; i < n; i++) if (nextAsciiCP() == -1) throw formatException(-1);
   }
 
   private int skipNumber() {
@@ -303,15 +300,15 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
     int cp = skipDigits();
     if (cp == '.') cp = skipDigits();
     if (cp == 'e' || cp == 'E') {
-      nextCodePoint(); // +/-/digit
+      nextAsciiCP(); // +/-/digit
       cp = skipDigits();
     }
     return cp;
   }
 
   private int skipDigits() {
-    int cp = nextCodePoint();
-    while (isDigit(cp)) cp = nextCodePoint();
+    int cp = nextAsciiCP();
+    while (isDigit(cp)) cp = nextAsciiCP();
     return cp;
   }
 
@@ -323,20 +320,20 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
 
   private int skipBoolean() {
     // t/f has been consumed
-    skipCodePoints(nextCodePoint() == 'r' ? 2 : 3);
+    skipCodePoints(nextAsciiCP() == 'r' ? 2 : 3);
     return readCharSkipWhitespace();
   }
 
   private int skipString() {
     // " has been consumed
-    int cp = nextCodePoint();
+    int cp = nextAnyCP();
     while (cp != '"') {
       if (cp == '\\') {
-        cp = nextCodePoint();
+        cp = nextAsciiCP();
         // hop over escaped char or unicode
         if (cp == 'u') skipCodePoints(4);
       }
-      cp = nextCodePoint();
+      cp = nextAnyCP();
     }
     return readCharSkipWhitespace();
   }

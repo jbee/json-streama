@@ -6,11 +6,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
@@ -64,20 +62,16 @@ class PerformanceTestJsonStream {
     long avg = 0;
     int n = 0;
     long startMs = currentTimeMillis();
-    try (RandomAccessFile file = new RandomAccessFile(input, "r")) {
-      FileChannel fileChannel = file.getChannel();
-      MappedByteBuffer buffer =
-          fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
 
-      Data data = JsonStream.ofRoot(Data.class, JsonInputStream.of(buffer::get));
-      Iterator<Entry> entries = data.entries();
-      while (entries.hasNext()) {
-        Entry e = entries.next();
-        avg += (e.a() + e.b()) / 2;
-        n++;
-      }
-      avg /= n;
+    Data data = JsonStream.ofRoot(Data.class, JsonInputStream.of(new FileInputStream(input)));
+    Iterator<Entry> entries = data.entries();
+    while (entries.hasNext()) {
+      Entry e = entries.next();
+      avg += (e.a() + e.b()) / 2;
+      n++;
     }
+    avg /= n;
+
     long duration = currentTimeMillis() - startMs;
     assertTrue(avg >= 50000 && avg <= 56000, "was " + avg);
     long fileSizeMB = Files.size(input.toPath()) / (1024 * 1024);
