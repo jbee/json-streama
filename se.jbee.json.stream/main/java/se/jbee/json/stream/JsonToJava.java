@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 /**
@@ -55,7 +56,28 @@ public interface JsonToJava {
       Supplier<T> mapNull,
       Function<String, ? extends T> mapString,
       Function<Number, ? extends T> mapNumber,
-      Function<Boolean, ? extends T> mapBoolean) {}
+      Function<Boolean, ? extends T> mapBoolean) {
+
+    public JsonTo<T> mapNull(T to) {
+      return mapNull(new ConstantNull<>(to));
+    }
+
+    public JsonTo<T> mapNull(Supplier<T> to) {
+      return new JsonTo<>(this.to, to, mapString, mapNumber, mapBoolean);
+    }
+
+    public JsonTo<T> mapString(Function<String, ? extends T> mapString) {
+      return new JsonTo<>(to, mapNull, mapString, mapNumber, mapBoolean);
+    }
+
+    public JsonTo<T> mapNumber(Function<Number, ? extends T> mapNumber) {
+      return new JsonTo<>(to, mapNull, mapString, mapNumber, mapBoolean);
+    }
+
+    public JsonTo<T> mapBoolean(Function<Boolean, ? extends T> mapBoolean) {
+      return new JsonTo<>(to, mapNull, mapString, mapNumber, mapBoolean);
+    }
+  }
 
   record ConstantNull<T>(T get) implements Supplier<T> {}
 
@@ -99,9 +121,6 @@ public interface JsonToJava {
           .with(null, Factory.NEW_INSTANCE)
           .immutable();
 
-  // FIXME to be fully correct the single element wrapping would also need to convert on the element
-  // but we do not have the fully generic type so that type is unknown
-
   /**
    * @return This mapping but any subsequent call to any {@link #with(JsonTo)} method variant will
    *     start with a mutable copy of this mapping. This mapping will not be affected by any further
@@ -109,6 +128,10 @@ public interface JsonToJava {
    */
   default JsonToJava immutable() {
     return this;
+  }
+
+  default <T> JsonToJava with(Class<T> to, UnaryOperator<JsonTo<T>> change) {
+    return with(change.apply(mapTo(to)));
   }
 
   /**

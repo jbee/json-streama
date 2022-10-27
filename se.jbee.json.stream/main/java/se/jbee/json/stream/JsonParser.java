@@ -284,7 +284,10 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
   }
 
   private int nextAsciiCP() {
-    return in.read();
+    int c = in.read();
+    if (c > 127 || c < 0)
+      throw unexpectedInputCharacter(c, printPosition.get(), "A ASCII range character");
+    return c;
   }
 
   private int nextAnyCP() {
@@ -364,6 +367,6 @@ record JsonParser(JsonInputStream in, Supplier<String> printPosition) {
   }
 
   private JsonFormatException formatException(int found, char... expected) {
-    return unexpectedInputCharacter(found, printPosition, expected);
+    return unexpectedInputCharacter(found, printPosition.get(), expected);
   }
 }

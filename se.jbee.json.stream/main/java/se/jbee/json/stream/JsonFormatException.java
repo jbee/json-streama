@@ -2,8 +2,6 @@ package se.jbee.json.stream;
 
 import static java.util.stream.Collectors.joining;
 
-import java.util.function.Supplier;
-
 /**
  * Indicates that the input wasn't valid JSON.
  *
@@ -18,15 +16,24 @@ public class JsonFormatException extends JsonProcessingException {
   }
 
   public static JsonFormatException unexpectedInputCharacter(
-      int found, Supplier<String> inputPosition, char[] expected) {
+      int found, String inputPosition, char[] expected) {
+    return unexpectedInputCharacter(found, inputPosition, toExpectedList(expected));
+  }
+
+  public static JsonFormatException unexpectedInputCharacter(
+      int found, String inputPosition, String expected) {
     String foundText = found == -1 ? "end of input" : "`" + Character.toString(found) + "`";
-    String expectedText =
-        expected.length == 0 ? "more input" : "one of " + toExpectedList(expected);
     return new JsonFormatException(
-        "Expected " + expectedText + " but found: " + foundText + "\nat: " + inputPosition.get());
+        "Expected " + expected + " but found: " + foundText + "\nat: " + inputPosition);
   }
 
   private static String toExpectedList(char[] expected) {
-    return new String(expected).chars().mapToObj(c -> "`" + (char) c + "`").collect(joining(","));
+    return expected.length == 0
+        ? "more input"
+        : "one of "
+            + new String(expected)
+                .chars()
+                .mapToObj(c -> "`" + (char) c + "`")
+                .collect(joining(","));
   }
 }

@@ -68,10 +68,12 @@ public final class JsonStream implements InvocationHandler {
     <T> T ofRoot(Class<T> objType, JsonInputStream in);
 
     <T> Stream<T> of(Class<T> streamType, JsonInputStream in);
+
+    <T> Iterator<T> iterator(Class<T> streamType, JsonInputStream in);
   }
 
   public static Factory fromFactory(JsonToJava mapping) {
-    return mapping == JsonToJava.DEFAULT
+    return mapping == JsonToJava.DEFAULT || mapping == null
         ? DEFAULT__MAPPING_FACTORY
         : new CachingFactory(mapping, new ConcurrentHashMap<>());
   }
@@ -89,7 +91,16 @@ public final class JsonStream implements InvocationHandler {
   }
 
   public static <T> Stream<T> of(Class<T> streamType, JsonInputStream in, JsonToJava mapping) {
-    return of(streamType, in, mapping, new IdentityHashMap<>());
+    return toStream(iterator(streamType, in, mapping, new IdentityHashMap<>()));
+  }
+
+  public static <T> Iterator<T> iterator(Class<T> streamType, JsonInputStream in) {
+    return iterator(streamType, in, JsonToJava.DEFAULT);
+  }
+
+  public static <T> Iterator<T> iterator(
+      Class<T> streamType, JsonInputStream in, JsonToJava mapping) {
+    return iterator(streamType, in, mapping, new IdentityHashMap<>());
   }
 
   /*
@@ -111,7 +122,12 @@ public final class JsonStream implements InvocationHandler {
 
     @Override
     public <T> Stream<T> of(Class<T> streamType, JsonInputStream in) {
-      return JsonStream.of(streamType, in, mapping, cache);
+      return toStream(iterator(streamType, in));
+    }
+
+    @Override
+    public <T> Iterator<T> iterator(Class<T> streamType, JsonInputStream in) {
+      return JsonStream.iterator(streamType, in, mapping, cache);
     }
   }
 
@@ -124,24 +140,22 @@ public final class JsonStream implements InvocationHandler {
     return (T) top.proxy;
   }
 
-  private static <T> Stream<T> of(
+  private static <T> Iterator<T> iterator(
       Class<T> streamType,
       JsonInputStream in,
       JsonToJava mapping,
       Map<JavaMember, ProxyInfo> cache) {
-    if (isProxyInterface(streamType)) {
-      JavaMember member = JavaMember.newRootMember(PROXY_STREAM, Stream.class, streamType);
-      JsonStream handler = new JsonStream(in, mapping, cache);
-      @SuppressWarnings("unchecked")
-      Stream<T> res = (Stream<T>) handler.yieldStreaming(mapping, null, member, new String[0]);
-      return res;
-    }
-    JavaMember member = JavaMember.newRootMember(MAPPED_STREAM, Stream.class, streamType);
-    JsonFrame frame =
-        new JsonFrame(new ProxyInfo(member, Map.of(member.jsonName(), member), mapping), null);
+    JavaMember.ProcessingType type =
+        isProxyInterface(streamType) ? PROXY_ITERATOR : MAPPED_ITERATOR;
+    JavaMember member = JavaMember.newRootMember(type, Stream.class, streamType);
     JsonStream handler = new JsonStream(in, mapping, cache);
+    JsonFrame frame =
+        type == PROXY_ITERATOR
+            ? null
+            : new JsonFrame(
+                new ProxyInfo(member, Map.of(member.jsonName(), member), mapping), null);
     @SuppressWarnings("unchecked")
-    Stream<T> res = (Stream<T>) handler.yieldStreaming(mapping, frame, member, new String[0]);
+    Iterator<T> res = (Iterator<T>) handler.yieldStreaming(mapping, frame, member, new String[0]);
     return res;
   }
 
@@ -165,9 +179,8 @@ public final class JsonStream implements InvocationHandler {
   @Override
   public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
     Class<?> declaringClass = method.getDeclaringClass();
-    if (method.isDefault()) {
+    if (method.isDefault())
       throw new UnsupportedOperationException("Default methods cannot be used on proxies yet.");
-    }
     if (declaringClass == Object.class) {
       return switch (method.getName()) {
         case "toString" -> toString();
@@ -871,6 +884,6 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private JsonFormatException formatException(int found, char... expected) {
-    return unexpectedInputCharacter(found, this::toString, expected);
+    return unexpectedInputCharacter(found, toString(), expected);
   }
 }

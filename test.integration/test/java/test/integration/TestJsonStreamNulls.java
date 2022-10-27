@@ -12,7 +12,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -375,12 +374,8 @@ class TestJsonStreamNulls {
     Stream<String> root = JsonStream.of(String.class, JsonInputStream.of(json));
     assertEquals(Arrays.asList("hello", null, "again"), root.toList());
     // same but with null mapped to empty String
-    root =
-        JsonStream.of(
-            String.class,
-            JsonInputStream.of(json),
-            JsonToJava.DEFAULT.with(
-                String.class, "", Function.identity(), String::valueOf, String::valueOf));
+    JsonToJava mapping = JsonToJava.DEFAULT.with(String.class, nulls -> nulls.mapNull(""));
+    root = JsonStream.of(String.class, JsonInputStream.of(json), mapping);
     assertEquals(List.of("hello", "", "again"), root.toList());
   }
 
@@ -400,5 +395,42 @@ class TestJsonStreamNulls {
     assertEquals(Arrays.asList("hello", null, "again"), root.stream().toList());
   }
 
-  // TODO stream with annotations (affect the items, not the stream itself)
+  @Test
+  void null_MappedStreamDefaultValueForElements() {
+    String json = // language=JSON
+        """
+        {
+        "stream": ["hello", null, "again"]
+        }
+        """;
+    interface StreamDefaultValueRoot {
+      @JsonProperty(defaultValue = "\"empty\"")
+      Stream<String> stream();
+    }
+    StreamDefaultValueRoot root = ofRoot(StreamDefaultValueRoot.class, JsonInputStream.of(json));
+    assertEquals(List.of("hello", "empty", "again"), root.stream().toList());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+      {}
+      """,
+        // language=JSON
+        """
+      {"element": null}
+      """
+      })
+  void null_ProxyObject(String json) {
+    interface Element {
+      String name();
+    }
+    interface ProxyObjectRoot {
+      Element element();
+    }
+    ProxyObjectRoot root = ofRoot(ProxyObjectRoot.class, JsonInputStream.of(json));
+    assertNull(root.element());
+  }
 }
