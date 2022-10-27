@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import se.jbee.json.stream.JsonConstraintException;
 import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonProperty;
-import se.jbee.json.stream.JsonSchemaException;
 import se.jbee.json.stream.JsonStream;
 
 /**
@@ -53,8 +53,8 @@ class TestJsonStreamConstraints {
 
     ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     Stream<Element> max3 = root.max3();
-    JsonSchemaException ex =
-        assertThrows(JsonSchemaException.class, () -> max3.forEach(Element::name));
+    JsonConstraintException ex =
+        assertThrows(JsonConstraintException.class, () -> max3.forEach(Element::name));
     assertEquals("Maximum expected number of Element items is 3.", ex.getMessage());
   }
 
@@ -80,8 +80,8 @@ class TestJsonStreamConstraints {
 
     ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     Stream<Element> min2 = root.min2();
-    JsonSchemaException ex =
-        assertThrows(JsonSchemaException.class, () -> min2.forEach(Element::name));
+    JsonConstraintException ex =
+        assertThrows(JsonConstraintException.class, () -> min2.forEach(Element::name));
     assertEquals(
         "Minimum expected number of Element items is 2 but only found 1.", ex.getMessage());
   }
@@ -97,7 +97,7 @@ class TestJsonStreamConstraints {
     ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     // note that for null the exception occurs when accessing the member
     // whereas too little elements are found once the stream is processed
-    JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);
+    JsonConstraintException ex = assertThrows(JsonConstraintException.class, root::min2);
     assertEquals(
         "Minimum expected number of Element items is 2 but only found 0.", ex.getMessage());
   }
@@ -111,7 +111,7 @@ class TestJsonStreamConstraints {
     ProxyStreamRoot root = JsonStream.ofRoot(ProxyStreamRoot.class, JsonInputStream.of(json));
     // note that for null the exception occurs when accessing the member
     // whereas too little elements are found once the stream is processed
-    JsonSchemaException ex = assertThrows(JsonSchemaException.class, root::min2);
+    JsonConstraintException ex = assertThrows(JsonConstraintException.class, root::min2);
     assertEquals(
         "Minimum expected number of Element items is 2 but only found 0.", ex.getMessage());
   }

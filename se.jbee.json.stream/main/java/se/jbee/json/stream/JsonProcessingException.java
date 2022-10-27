@@ -11,7 +11,7 @@ package se.jbee.json.stream;
  * @see JsonFormatException
  * @see JsonSchemaException
  */
-public abstract class JsonProcessingException extends IllegalArgumentException {
+abstract class JsonProcessingException extends IllegalArgumentException {
   protected JsonProcessingException(String s) {
     super(s);
   }

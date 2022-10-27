@@ -5,6 +5,8 @@ import static java.util.stream.Collectors.joining;
 /**
  * Indicates that the input wasn't valid JSON.
  *
+ * <p>In other words that input is malformed JSON.
+ *
  * @author Jan Bernitt
  * @since 1.0
  * @see JsonSchemaException

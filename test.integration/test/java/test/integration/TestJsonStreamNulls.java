@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -347,6 +348,52 @@ class TestJsonStreamNulls {
       strings = {
         // language=JSON
         """
+        {}
+        """,
+        // language=JSON
+        """
+        {
+        "stream": null
+        }
+        """
+      })
+  void null_MappedStreamDefaultParameter(String json) {
+    interface StreamDefaultParameterRoot {
+      Stream<String> stream(Stream<String> defaultValue);
+    }
+    StreamDefaultParameterRoot root =
+        ofRoot(StreamDefaultParameterRoot.class, JsonInputStream.of(json));
+    assertEquals(Stream.of("1").toList(), root.stream(Stream.of("1")).toList());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
+          {}
+          """,
+        // language=JSON
+        """
+          {
+          "stream": null
+          }
+          """
+      })
+  void null_MappedStreamDefaultParameterSupplier(String json) {
+    interface StreamDefaultParameterRoot {
+      Stream<String> stream(Supplier<Stream<String>> defaultValue);
+    }
+    StreamDefaultParameterRoot root =
+        ofRoot(StreamDefaultParameterRoot.class, JsonInputStream.of(json));
+    assertEquals(Stream.of("1").toList(), root.stream(() -> Stream.of("1")).toList());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
       {
       "stream":[]
       }
@@ -358,11 +405,10 @@ class TestJsonStreamNulls {
     }
     JsonToJava toJava = JsonToJava.DEFAULT.with(Stream.class, null, Stream::of);
     StreamNullRoot root = ofRoot(StreamNullRoot.class, JsonInputStream.of(json), toJava);
-    assertEquals(
-        List.of(),
-        root.stream().toList(),
+    String msg =
         "an empty array [] becomes an empty stream even if a null or undefined stream is configured"
-            + " to be null");
+            + " to be null";
+    assertEquals(List.of(), root.stream().toList(), msg);
   }
 
   @Test

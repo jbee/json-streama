@@ -11,8 +11,8 @@ import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_ITERATOR;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_OBJECT;
 import static se.jbee.json.stream.JavaMember.ProcessingType.PROXY_STREAM;
 import static se.jbee.json.stream.JavaMember.ProcessingType.RAW_VALUES;
-import static se.jbee.json.stream.JsonSchemaException.maxOccurExceeded;
-import static se.jbee.json.stream.JsonSchemaException.minOccurNotReached;
+import static se.jbee.json.stream.JsonConstraintException.maxOccurExceeded;
+import static se.jbee.json.stream.JsonConstraintException.minOccurNotReached;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
@@ -28,6 +28,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import se.jbee.json.stream.JsonProperty.JsonType;
 
@@ -201,10 +202,8 @@ record JavaMember(
         && !Modifier.isStatic(m.getModifiers())
         && !m.getName().equals("skip")
         && (pc == 0 && rt != void.class
-            || pc == 1
-                && rt != void.class
-                && m.getGenericParameterTypes()[0].equals(m.getGenericReturnType())
-            || pc == 1 && rt == void.class && m.getParameterTypes()[0] == Consumer.class);
+            || isMemberWithDefaultParameter(m)
+            || isMemberWithConsumerParameter(m));
   }
 
   public static JavaMember newRootMember(
@@ -220,28 +219,25 @@ record JavaMember(
     Class<?> valueType = computeValueType(m, processingType);
     JsonProperty property = m.getAnnotation(JsonProperty.class);
     Object jsonDefaultValue = null;
-    if (property != null && !property.defaultValue().isEmpty()) {
+    boolean hasDefaultParameter = isMemberWithDefaultParameter(m);
+    if (!hasDefaultParameter && property != null && !property.defaultValue().isEmpty())
       jsonDefaultValue = JsonParser.parse(property.defaultValue());
-    }
     boolean retainNulls =
-        processingType == RAW_VALUES || property != null && property.retainNulls();
+        processingType == RAW_VALUES
+            || !hasDefaultParameter && property != null && property.retainNulls();
     return new JavaMember(
         isKeyProperty ? 0 : index,
         computeJsonName(m),
         isKeyProperty,
         processingType,
         new Types(m.getReturnType(), collectionType, computeKeyType(m, processingType), valueType),
-        new Nulls(retainNulls, computeHasDefaultParameter(m, processingType), jsonDefaultValue),
+        new Nulls(retainNulls, hasDefaultParameter, jsonDefaultValue),
         new Constraints(
             computeMinOccur(m), computeMaxOccur(m), 1, 128, 256, EnumSet.allOf(JsonType.class)));
   }
 
   public static JavaMember getMember(Method method) {
     return MEMBERS_BY_METHOD.get(method);
-  }
-
-  public int getDefaultValueParameterIndex() {
-    return processingType.isConsumer() ? 1 : 0;
   }
 
   public JsonToJava.JsonTo<?> jsonToValueType(JsonToJava toJava) {
@@ -272,9 +268,7 @@ record JavaMember(
       return isProxyInterface(actualGenericRawType(m.getGenericReturnType(), 0))
           ? PROXY_ITERATOR
           : MAPPED_ITERATOR;
-    if (as == void.class
-        && m.getParameterCount() == 1
-        && m.getParameterTypes()[0] == Consumer.class)
+    if (isMemberWithConsumerParameter(m))
       return isProxyInterface(actualGenericRawType(m.getGenericParameterTypes()[0], 0))
           ? PROXY_CONSUMER
           : MAPPED_CONSUMER;
@@ -285,6 +279,12 @@ record JavaMember(
       return MAPPED_VALUE;
     }
     return isProxyInterface(as) ? PROXY_OBJECT : MAPPED_VALUE;
+  }
+
+  private static boolean isMemberWithConsumerParameter(Method m) {
+    return m.getReturnType() == void.class
+        && m.getParameterCount() == 1
+        && m.getParameterTypes()[0] == Consumer.class;
   }
 
   private static String computeJsonName(Method m) {
@@ -354,10 +354,13 @@ record JavaMember(
     return null;
   }
 
-  private static boolean computeHasDefaultParameter(Method m, ProcessingType processingType) {
-    int defaultValueIndex = processingType.isConsumer() ? 1 : 0;
-    return m.getParameterCount() == defaultValueIndex + 1
-        && m.getGenericReturnType().equals(m.getGenericParameterTypes()[defaultValueIndex]);
+  private static boolean isMemberWithDefaultParameter(Method m) {
+    if (m.getParameterCount() != 1 || m.getReturnType() == void.class) return false;
+    Type returnType = m.getGenericReturnType();
+    Type paramType = m.getGenericParameterTypes()[0];
+    return paramType.equals(returnType)
+        || toRawType(paramType) == Supplier.class
+            && actualGenericType(paramType, 0).equals(returnType);
   }
 
   private static boolean computeIsKeyProperty(Method m) {

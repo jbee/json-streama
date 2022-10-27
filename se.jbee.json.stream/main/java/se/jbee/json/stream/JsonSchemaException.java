@@ -18,18 +18,6 @@ public class JsonSchemaException extends JsonProcessingException {
     super(s);
   }
 
-  public static JsonSchemaException minOccurNotReached(Class<?> type, int minOccur, int occur) {
-    return new JsonSchemaException(
-        format(
-            "Minimum expected number of %s items is %d but only found %d.",
-            type.getSimpleName(), minOccur, occur));
-  }
-
-  public static JsonSchemaException maxOccurExceeded(Class<?> type, int maxOccur) {
-    return new JsonSchemaException(
-        format("Maximum expected number of %s items is %d.", type.getSimpleName(), maxOccur));
-  }
-
   public static JsonSchemaException outOfOrder(String name, Stream<String> before) {
     return new JsonSchemaException(
         format(

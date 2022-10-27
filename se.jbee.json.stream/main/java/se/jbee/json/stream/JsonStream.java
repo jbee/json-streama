@@ -257,7 +257,7 @@ public final class JsonStream implements InvocationHandler {
   private Object yieldStreamUndefined(JsonToJava mapping, JavaMember member, Object[] args) {
     member.checkConstraintMinOccur(0);
     return member.nulls().hasDefaultParameter()
-        ? args[member.getDefaultValueParameterIndex()]
+        ? getDefaultValue(member, args)
         // NB: this is the stream type mapped, "nulls" has value type null value
         : mapping.mapTo(member.types().returnType()).mapNull().get();
   }
@@ -314,10 +314,15 @@ public final class JsonStream implements InvocationHandler {
     }
   }
 
+  private static Object getDefaultValue(JavaMember member, Object[] args) {
+    Object val = args[0];
+    return val instanceof Supplier<?> s ? s.get() : val;
+  }
+
   private static Object toJavaType(ProxyInfo info, JavaMember member, Object value, Object[] args) {
     if (value == null)
       return member.nulls().hasDefaultParameter()
-          ? args[member.getDefaultValueParameterIndex()]
+          ? getDefaultValue(member, args)
           : info.nullValues[member.index()].get();
     if (value instanceof List<?> list) return toJavaCollection(info, member, list);
     if (value instanceof Map<?, ?> map) return toJavaMap(info, member, map);
@@ -718,6 +723,10 @@ public final class JsonStream implements InvocationHandler {
     int proxyStreamItemIndex = -1;
 
     int mappedStreamItemIndex = -1;
+
+    // TODO a map of Consumers so they can be pre-provided and when members are encountered the
+    // remembered Consumer is used
+    // this will allow providing stream members in random order
 
     private JsonFrame(ProxyInfo info, Object proxy) {
       this.info = info;
