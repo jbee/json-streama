@@ -6,6 +6,7 @@ import static test.integration.Model.PLAYLIST_JSON;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonInputStream;
@@ -21,6 +22,7 @@ class TestJsonStreamObjectsOfProxies {
   void rootObjectAsProxy() {
     Function<Model.Track, String> describe = track -> //
         String.format(
+                Locale.ROOT,
                 "%d. %s %s (%.1f)",
                 track.no(), track.name(), "*".repeat(track.stars()), track.averageStars());
 
