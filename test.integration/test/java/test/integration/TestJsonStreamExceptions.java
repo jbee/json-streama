@@ -76,7 +76,7 @@ class TestJsonStreamExceptions {
     // so we assume albums were not present, hence 0 in count
     assertEquals(0, discography.albums().count());
     // type the singles is fine, we now expected this
-    discography.singles(single -> assertNotNull(single.name()));
+    discography.singles().forEach(single -> assertNotNull(single.name()));
     // but should we now try to process albums as they are after the singles in the stream
     // we get an error as we already processed albums before
     JsonSchemaException ex =

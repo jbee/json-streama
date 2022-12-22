@@ -194,12 +194,32 @@ public final class JsonStream implements InvocationHandler {
 
     if (frame.proxy != proxy)
       throw new IllegalStateException("Parent proxy called out of order\nat: " + this);
+
+    JavaMember member = JavaMember.getMember(method);
+
+    // register any consumers
+    if (member.processingType().isConsumer()) {
+      String name = member.jsonName();
+      frame.addCallback(name, (Consumer<?>) args[0]);
+      // if we suspended at a consumer which now is available continue with it
+      if (name.equals(frame.suspendedAtMember)) {
+        yieldConsumer(frame, member, frame.getCallback(name));
+        frame.suspendedAtMember = null;
+        frame.isSuspended = true; //needs to read , or }
+      }
+    }
+
     readSimpleMembersAndSuspend(frame);
-    return yieldValue(frame, JavaMember.getMember(method), args);
+    return yieldValue(frame, member, args);
   }
 
   private Object yieldValue(JsonFrame frame, JavaMember member, Object[] args) {
     if (member.processingType().isSuspending()) {
+      if (member.processingType().isConsumer()) { // consumer has no immediate result
+        //frame.checkNotAlreadyProcessed(member);
+        return null; // = void (consumer either has been fed or will be fed later)
+      }
+
       if (!member.jsonName().equals(frame.suspendedAtMember)) {
         frame.checkNotAlreadyProcessed(member);
         // assume the input does not contain the requested member so its value is empty
@@ -208,7 +228,7 @@ public final class JsonStream implements InvocationHandler {
             ? yieldStreamUndefined(mapping, member, args)
             : toJavaType(frame.info, member, null, args);
       }
-      frame.markAsProcessed(member, 0);
+      frame.markAsProcessed(member, 0); // start of streaming...
       // what we have is what we now are going to handle so afterwards we could do next one
       frame.suspendedAtMember = null;
       return yieldStreaming(mapping, frame, member, args);
@@ -262,8 +282,13 @@ public final class JsonStream implements InvocationHandler {
         : mapping.mapTo(member.types().returnType()).mapNull().get();
   }
 
+  private void yieldConsumer(JsonFrame frame, JavaMember member, Consumer<?> callback) {
+    frame.markAsProcessed(member, 0); // start of streaming...
+    yieldStreaming(mapping, frame, member, new Object[] {callback} );
+  }
+
   private void readSimpleMembersAndSuspend(JsonFrame frame) {
-    if (frame.suspendedAtMember != null || frame.isClosed) return;
+    if (frame.isClosed || frame.suspendedAtMember != null) return;
     int cp = ',';
     if (!frame.isOpened) {
       in.readCharSkipWhitespace('{');
@@ -272,6 +297,7 @@ public final class JsonStream implements InvocationHandler {
       cp = in.readCharSkipWhitespace(); // should be , or }
       frame.isSuspended = false;
     }
+
     while (cp != '}') {
       if (cp != ',') throw formatException(cp, ',', '}');
       cp = in.readCharSkipWhitespace(); // should be either " of member or }
@@ -292,18 +318,26 @@ public final class JsonStream implements InvocationHandler {
           cp = in.skipNodeDetect();
         }
         frame.suspendedAtMember = null;
-        continue;
       } else if (member.processingType().isSuspending()) {
         frame.checkNotAlreadyProcessed(member);
+        if (member.processingType().isConsumer()) {
+          Consumer<?> callback = frame.getCallback(name);
+          if (callback != null) {
+            yieldConsumer(frame, member, callback);
+            cp = in.readCharSkipWhitespace(); // , or } after the streaming member
+            continue; // next member
+          }
+        }
         frame.suspendedAtMember = member.jsonName();
         frame.isSuspended = true;
         return;
+      } else {
+        frame.suspendedAtMember = null;
+        // MAPPED_VALUE
+        // TODO are we accepting the type of the value?
+        // TODO also: limit size of collections
+        cp = in.readNodeDetect(val -> frame.setRawValue(member, val));
       }
-      frame.suspendedAtMember = null;
-      // MAPPED_VALUE
-      // TODO are we accepting the type of the value?
-      // TODO also: limit size of collections
-      cp = in.readNodeDetect(val -> frame.setRawValue(member, val));
     }
     if (!frame.isClosed) {
       frame.isClosed = true;
@@ -724,9 +758,11 @@ public final class JsonStream implements InvocationHandler {
 
     int mappedStreamItemIndex = -1;
 
-    // TODO a map of Consumers so they can be pre-provided and when members are encountered the
-    // remembered Consumer is used
-    // this will allow providing stream members in random order
+    /**
+     * This map remembers {@link Consumer}s provided by a member method call in case their
+     * input is not yet available so that they can be used once the member occurs in the input.
+     */
+    private Map<String, Consumer<?>> callbacks;
 
     private JsonFrame(ProxyInfo info, Object proxy) {
       this.info = info;
@@ -734,6 +770,16 @@ public final class JsonStream implements InvocationHandler {
       int size = info.membersByJsonName.size() + 1;
       this.rawValues = new Object[size];
       this.memberInputOrder = new int[size];
+    }
+
+    void addCallback(String name, Consumer<?> callback) {
+      if (callbacks == null)
+        callbacks = new HashMap<>(4);
+      callbacks.put(name, callback);
+    }
+
+    Consumer<?> getCallback(String name) {
+      return callbacks == null ? null : callbacks.get(name);
     }
 
     void setRawValue(JavaMember member, Object rawValue) {
@@ -794,12 +840,12 @@ public final class JsonStream implements InvocationHandler {
     }
 
     void streamCompleteProxy() {
-      isClosed = true;
+      isClosed = true; // proxy frame level done
       checkConstraintMinOccur(proxyStreamItemIndex + 1);
     }
 
     void streamCompleteMappedValue() {
-      isClosed = true;
+      // closed is not true as there is no extra frame level without proxies
       checkConstraintMinOccur(mappedStreamItemIndex + 1);
     }
 

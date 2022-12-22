@@ -18,7 +18,7 @@ interface Model {
 
     Stream<Album> albums();
 
-    void singles(Consumer<Single> eachSingle);
+    Stream<Single> singles();
   }
 
   interface Playlist {

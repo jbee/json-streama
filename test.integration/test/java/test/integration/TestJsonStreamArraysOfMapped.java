@@ -1,6 +1,7 @@
 package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
@@ -10,6 +11,8 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
 
@@ -51,6 +54,37 @@ class TestJsonStreamArraysOfMapped {
     List<String> actual = new ArrayList<>();
     root.values().forEachRemaining(actual::add);
     assertEquals(List.of("a", "b", "c"), actual);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      // language=JSON
+      """
+      {
+      "a": ["1", "2"],
+      "b": ["3", "4"]
+      }
+      """,
+      // language=JSON
+      """
+      {
+      "b": ["3", "4"],
+      "a": ["1", "2"]
+      }
+      """
+  })
+  void arrayConsumerOfDirectlyMappedValues_Remembered(String json) {
+    interface Root {
+      void a(Consumer<String> forEach);
+      void b(Consumer<String> forEach);
+    }
+    Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));
+    List<String> as = new ArrayList<>();
+    List<String> bs = new ArrayList<>();
+    root.a(as::add);
+    root.b(bs::add);
+    assertEquals(List.of("1", "2"), as);
+    assertEquals(List.of("3", "4"), bs);
   }
 
   @Test

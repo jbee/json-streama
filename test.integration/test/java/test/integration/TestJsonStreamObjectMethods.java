@@ -52,7 +52,7 @@ class TestJsonStreamObjectMethods {
     Discography discography = JsonStream.ofRoot(Discography.class, JsonInputStream.of(json));
     assertEquals("Tom Waits", discography.artist());
     AtomicInteger singles = new AtomicInteger();
-    discography.singles(
+    discography.singles().forEach(
         single -> {
           single.name(); // need to actually consume a single
           singles.incrementAndGet();
