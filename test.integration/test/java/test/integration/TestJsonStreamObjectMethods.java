@@ -52,11 +52,13 @@ class TestJsonStreamObjectMethods {
     Discography discography = JsonStream.ofRoot(Discography.class, JsonInputStream.of(json));
     assertEquals("Tom Waits", discography.artist());
     AtomicInteger singles = new AtomicInteger();
-    discography.singles().forEach(
-        single -> {
-          single.name(); // need to actually consume a single
-          singles.incrementAndGet();
-        });
+    discography
+        .singles()
+        .forEach(
+            single -> {
+              single.name(); // need to actually consume a single
+              singles.incrementAndGet();
+            });
     assertEquals(1, singles.get());
     assertNotNull(discography.albums(), "need to access album to forwards stream beyond singles");
     assertEquals(

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import se.jbee.json.stream.JsonInputStream;
-import se.jbee.json.stream.JsonProperty;
 import se.jbee.json.stream.JsonStream;
 import test.integration.Model.Track;
 
@@ -33,26 +32,30 @@ class TestJsonStreamArraysOfProxies {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {
-      // language=JSON
-      """
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
       {
       "a": [{"x": 1}, {"x": 2}],
       "b": [{"x": 3}, {"x": 4}]
       }
       """,
-      // language=JSON
-      """
+        // language=JSON
+        """
       {
       "b": [{"x": 3}, {"x": 4}],
       "a": [{"x": 1}, {"x": 2}]
       }
       """
-  })
+      })
   void arrayConsumerOfProxyValues_Remembered(String json) {
-    interface Entry { int x(); }
+    interface Entry {
+      int x();
+    }
     interface Root {
       void a(Consumer<Entry> forEach);
+
       void b(Consumer<Entry> forEach);
     }
     Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));
@@ -60,7 +63,7 @@ class TestJsonStreamArraysOfProxies {
     List<Integer> bs = new ArrayList<>();
     root.a(e -> as.add(e.x()));
     root.b(e -> bs.add(e.x()));
-    assertEquals(List.of(1,2), as);
-    assertEquals(List.of(3,4), bs);
+    assertEquals(List.of(1, 2), as);
+    assertEquals(List.of(3, 4), bs);
   }
 }

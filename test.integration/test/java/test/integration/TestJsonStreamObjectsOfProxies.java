@@ -24,7 +24,10 @@ class TestJsonStreamObjectsOfProxies {
         String.format(
                 Locale.ROOT,
                 "%d. %s %s (%.1f)",
-                track.no(), track.name(), "*".repeat(track.stars()), track.averageStars());
+                track.no(),
+                track.name(),
+                "*".repeat(track.stars()),
+                track.averageStars());
 
     Model.Playlist list =
         JsonStream.ofRoot(Model.Playlist.class, JsonInputStream.of(PLAYLIST_JSON));

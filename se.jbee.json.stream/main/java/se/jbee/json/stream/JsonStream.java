@@ -205,7 +205,7 @@ public final class JsonStream implements InvocationHandler {
       if (name.equals(frame.suspendedAtMember)) {
         yieldConsumer(frame, member, frame.getCallback(name));
         frame.suspendedAtMember = null;
-        frame.isSuspended = true; //needs to read , or }
+        frame.isSuspended = true; // needs to read , or }
       }
     }
 
@@ -216,7 +216,7 @@ public final class JsonStream implements InvocationHandler {
   private Object yieldValue(JsonFrame frame, JavaMember member, Object[] args) {
     if (member.processingType().isSuspending()) {
       if (member.processingType().isConsumer()) { // consumer has no immediate result
-        //frame.checkNotAlreadyProcessed(member);
+        // frame.checkNotAlreadyProcessed(member);
         return null; // = void (consumer either has been fed or will be fed later)
       }
 
@@ -284,7 +284,7 @@ public final class JsonStream implements InvocationHandler {
 
   private void yieldConsumer(JsonFrame frame, JavaMember member, Consumer<?> callback) {
     frame.markAsProcessed(member, 0); // start of streaming...
-    yieldStreaming(mapping, frame, member, new Object[] {callback} );
+    yieldStreaming(mapping, frame, member, new Object[] {callback});
   }
 
   private void readSimpleMembersAndSuspend(JsonFrame frame) {
@@ -759,8 +759,8 @@ public final class JsonStream implements InvocationHandler {
     int mappedStreamItemIndex = -1;
 
     /**
-     * This map remembers {@link Consumer}s provided by a member method call in case their
-     * input is not yet available so that they can be used once the member occurs in the input.
+     * This map remembers {@link Consumer}s provided by a member method call in case their input is
+     * not yet available so that they can be used once the member occurs in the input.
      */
     private Map<String, Consumer<?>> callbacks;
 
@@ -773,8 +773,7 @@ public final class JsonStream implements InvocationHandler {
     }
 
     void addCallback(String name, Consumer<?> callback) {
-      if (callbacks == null)
-        callbacks = new HashMap<>(4);
+      if (callbacks == null) callbacks = new HashMap<>(4);
       callbacks.put(name, callback);
     }
 

@@ -1,7 +1,6 @@
 package test.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
@@ -57,25 +56,27 @@ class TestJsonStreamArraysOfMapped {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {
-      // language=JSON
-      """
+  @ValueSource(
+      strings = {
+        // language=JSON
+        """
       {
       "a": ["1", "2"],
       "b": ["3", "4"]
       }
       """,
-      // language=JSON
-      """
+        // language=JSON
+        """
       {
       "b": ["3", "4"],
       "a": ["1", "2"]
       }
       """
-  })
+      })
   void arrayConsumerOfDirectlyMappedValues_Remembered(String json) {
     interface Root {
       void a(Consumer<String> forEach);
+
       void b(Consumer<String> forEach);
     }
     Root root = JsonStream.ofRoot(Root.class, JsonInputStream.of(json));

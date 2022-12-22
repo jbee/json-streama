@@ -56,7 +56,9 @@ public @interface JsonProperty {
 
   int maxOccur() default Integer.MAX_VALUE;
 
-  /** @return maximum number of chars in a string or maximum number of digits in a number */
+  /**
+   * @return maximum number of chars in a string or maximum number of digits in a number
+   */
   int maxLength() default -1;
 
   /**
