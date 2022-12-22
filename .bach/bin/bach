@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+set +e
+
+BACH_HOME="$(dirname "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )")"
+BIN="${BACH_HOME}/bin"
+
+if [[ "${BACH_VERBOSE}" == "true" ]]; then
+  echo !      "$0"
+  echo ! BIN = ${BIN}
+fi
+
 if [[ -z "${JAVA_HOME}" ]]; then
   echo JAVA_HOME not set, using `which java`
   JAVA="java"
@@ -7,7 +17,13 @@ else
   JAVA="${JAVA_HOME}/bin/java"
 fi
 
-BACH=`dirname -- "$0"`/bach.java
+BACH="-ea --module-path ${BIN} --add-modules ALL-DEFAULT,ALL-MODULE-PATH --module run.bach/run.bach.Main"
+
+if [[ "${BACH_VERBOSE}" == "true" ]]; then
+  echo ! JAVA = ${JAVA}
+  echo ! BACH = ${BACH}
+  echo ! ARGS = "$@"
+fi
 
 ${JAVA} ${BACH} "$@"
 

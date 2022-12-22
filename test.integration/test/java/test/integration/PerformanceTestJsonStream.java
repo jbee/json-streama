@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
+
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
@@ -32,7 +33,7 @@ class PerformanceTestJsonStream {
     int b();
   }
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String... args) throws IOException {
     int n = 50_000_000;
     File file = Path.of("").resolve("data.json").toFile();
     try (BufferedWriter out = new BufferedWriter(new FileWriter(file))) {

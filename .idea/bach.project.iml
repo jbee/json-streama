@@ -9,12 +9,11 @@
     <orderEntry type="module-library">
       <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/.bach/bin/run.bach.jar!/" />
+          <root url="file://$MODULE_DIR$/.bach/bin" />
         </CLASSES>
         <JAVADOC />
-        <SOURCES>
-          <root url="jar://$MODULE_DIR$/.bach/bin/run.bach.jar!/" />
-        </SOURCES>
+        <SOURCES />
+        <jarDirectory url="file://$MODULE_DIR$/.bach/bin" recursive="false" />
       </library>
     </orderEntry>
     <orderEntry type="inheritedJdk" />
