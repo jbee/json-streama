@@ -73,7 +73,7 @@ class TestJsonStreamArraysOfMapped {
       }
       """
       })
-  void arrayConsumerOfDirectlyMappedValues_Remembered(String json) {
+  void arrayConsumerOfDirectlyMappedValues(String json) {
     interface Root {
       void a(Consumer<String> forEach);
 

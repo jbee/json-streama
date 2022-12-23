@@ -2,6 +2,7 @@ package se.jbee.json.stream;
 
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Spliterators.spliteratorUnknownSize;
+import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toSet;
 import static se.jbee.json.stream.JavaMember.ProcessingType.*;
@@ -399,9 +400,10 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private Void objectAsProxyConsumer(JavaMember member, Object[] args) {
-    JsonFrame frame = pushFrame(member);
     @SuppressWarnings("unchecked")
     Consumer<Object> consumer = (Consumer<Object>) args[0];
+
+    JsonFrame frame = pushFrame(member);
     int cp = ',';
     while (cp != '}') {
       if (cp != ',') throw formatException(cp, ',', '}');
@@ -420,9 +422,10 @@ public final class JsonStream implements InvocationHandler {
   }
 
   private Void arrayViaProxyConsumer(JavaMember member, Object[] args) {
-    JsonFrame frame = pushFrame(member);
     @SuppressWarnings("unchecked")
     Consumer<Object> consumer = (Consumer<Object>) args[0];
+
+    JsonFrame frame = pushFrame(member);
     int cp = ',';
     while (cp != ']') {
       if (cp != ',') throw formatException(cp, ',', ']');
@@ -808,11 +811,9 @@ public final class JsonStream implements InvocationHandler {
     }
 
     Map<String, ?> getAnyOtherValue() {
+      if (info.anyOtherValueMember == null) return null;
       @SuppressWarnings("unchecked")
-      Map<String, ?> anyOtherValues =
-          info.anyOtherValueMember == null
-              ? null
-              : (Map<String, ?>) rawValues[info.anyOtherValueMember.index()];
+      Map<String, ?> anyOtherValues = (Map<String, ?>) rawValues[info.anyOtherValueMember.index()];
       return anyOtherValues == null ? Map.of() : unmodifiableMap(anyOtherValues);
     }
 
@@ -840,6 +841,7 @@ public final class JsonStream implements InvocationHandler {
 
     void streamCompleteProxy() {
       isClosed = true; // proxy frame level done
+
       checkConstraintMinOccur(proxyStreamItemIndex + 1);
     }
 
@@ -857,14 +859,17 @@ public final class JsonStream implements InvocationHandler {
     }
 
     void checkNotAlreadyProcessed(JavaMember member) {
-      if (rawValues[member.index()] != null)
-        throw JsonSchemaException.outOfOrder(
-            member.jsonName(),
+      if (isRawValueAvailable(member.index())) {
+        List<String> before =
             info.membersByJsonName.values().stream()
                 .filter(m -> m.processingType().isStreaming())
                 .filter(m -> m != member)
                 .filter(m -> rawValues[m.index()] != null)
-                .map(JavaMember::jsonName));
+                .map(JavaMember::jsonName)
+                .collect(toList());
+        if (before.isEmpty()) throw JsonSchemaException.alreadyProcessed(member.jsonName());
+        throw JsonSchemaException.outOfOrder(member.jsonName(), before);
+      }
     }
 
     /**

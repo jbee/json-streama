@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
-
 import org.junit.jupiter.api.Test;
 import se.jbee.json.stream.JsonInputStream;
 import se.jbee.json.stream.JsonStream;
