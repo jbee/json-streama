@@ -17,6 +17,6 @@ jobs:
       uses: actions/setup-java@v4
       with:
         java-version: '22'
-        distribution: 'microsoft'
+        distribution: 'oracle'
     - name: 'Build with Bach'
       run: java @build
